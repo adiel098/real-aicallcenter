@@ -42,12 +42,17 @@ app.use(
           "http://localhost:3003",
           "https://api.vapi.ai",
           "wss://api.vapi.ai",
+          "https://*.daily.co",
+          "wss://*.daily.co",
         ],
-        scriptSrc: ["'self'", "https://unpkg.com"],
+        scriptSrc: ["'self'", "https://unpkg.com", "https://c.daily.co"],
         scriptSrcAttr: ["'none'"],  // Explicitly block inline event handlers for security
         styleSrc: ["'self'", "'unsafe-inline'"],
         fontSrc: ["'self'", "data:"],
         imgSrc: ["'self'", "data:", "https:"],
+        frameSrc: ["'self'", "https://*.daily.co"],
+        workerSrc: ["'self'", "blob:"],
+        childSrc: ["'self'", "blob:"],
       },
     },
   })
