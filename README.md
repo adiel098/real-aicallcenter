@@ -188,8 +188,8 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
       - After 3 failures, use schedule_callback tool
 
    7. **Classify eligibility:** Use classify_and_save_user (after Medicare validated)
-      - Scoring: Plan (20-40pts) + Colorblindness (40pts mandatory) + Age (10-20pts)
-      - Threshold: 80+ points = QUALIFIED
+      - Binary matching: ALL criteria must be met (not scoring)
+      - Criteria: Has Medicare + Plan covers vision (Advantage/B/C) + Colorblindness + MBI
       - QUALIFIED → SALE disposition sent to VICI automatically
       - NOT_QUALIFIED → NQI disposition sent to VICI automatically
 
@@ -330,15 +330,21 @@ The system comes with 8 pre-configured leads:
 
 ### Classification Criteria
 
-Medicare members are classified based on:
+Medicare members are classified using **binary matching** (ALL criteria must be met):
 
-- **Medicare Plan Level**: Advantage and Plan C provide best coverage (40 points), Plan B good coverage (30 points), Plans A/D limited coverage (20 points)
-- **Colorblindness Diagnosis**: REQUIRED - Must have confirmed colorblindness diagnosis (40 points). Without this, automatically NOT_QUALIFIED
-- **Age**: 65+ meets Medicare eligibility (20 points), under 65 may qualify through disability (10 points)
+**QUALIFIED** requires ALL of the following:
 
-**Classification Score:**
-- 80+ points = QUALIFIED (eligible for premium eyewear subscription)
-- Below 80 points = NOT_QUALIFIED
+1. ✅ **Has Medicare Plan**: Member has active Medicare coverage (A, B, C, D, or Advantage)
+2. ✅ **Plan Covers Premium Eyewear**: Medicare plan includes vision coverage
+   - **Approved plans**: Advantage, Plan B, Plan C
+   - **Limited coverage**: Plan A (hospital only), Plan D (prescriptions only)
+3. ✅ **Has Colorblindness Diagnosis**: MANDATORY - Confirmed diagnosis (any type: red-green, blue-yellow, or total)
+4. ✅ **Medicare Beneficiary Identifier (MBI)**: Valid MBI on file
+
+**Classification Result:**
+- ALL criteria met = **QUALIFIED** (eligible for premium eyewear subscription)
+- ANY criterion fails = **NOT_QUALIFIED**
+- Score returned: 100 (qualified) or 0 (not qualified)
 
 **VICI Integration - All 8 Dispositions:**
 

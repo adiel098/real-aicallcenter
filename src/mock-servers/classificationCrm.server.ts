@@ -77,127 +77,145 @@ app.use((req: Request, res: Response, next) => {
 const classifyUser = (userData: UserData): Classification => {
   const requestLogger = logger.child({ userId: userData.userId });
 
-  requestLogger.debug({ userId: userData.userId }, 'Starting Medicare eligibility classification');
+  requestLogger.debug({ userId: userData.userId }, 'Starting Medicare eligibility classification (matching-based)');
 
-  let score = 0; // Start at 0, must meet all criteria
+  // Binary matching system: ALL criteria must be met (AND logic, not scoring)
+  let isQualified = true;
+  const failureReasons: string[] = [];
   const factors: Classification['factors'] = [];
 
-  // Factor 1: Medicare Plan Level (REQUIRED)
+  // CRITERION 1: Has Medicare Plan (REQUIRED)
   const planLevel = userData.medicareData.planLevel;
   if (!planLevel) {
-    score = 0;
+    isQualified = false;
+    failureReasons.push('No Medicare plan on file');
     factors.push({
       name: 'medicare_plan',
       impact: 'negative',
-      description: 'No Medicare plan on file',
+      description: 'No Medicare plan on file - required for program eligibility',
     });
-    requestLogger.debug('Medicare plan: missing (disqualified)');
-  } else if (planLevel === 'Advantage' || planLevel === 'C') {
-    score += 40;
-    factors.push({
-      name: 'medicare_plan',
-      impact: 'positive',
-      description: `Medicare ${planLevel} includes comprehensive vision coverage`,
-    });
-    requestLogger.debug({ planLevel, scoreChange: +40 }, 'Medicare plan: excellent coverage');
-  } else if (planLevel === 'B') {
-    score += 30;
-    factors.push({
-      name: 'medicare_plan',
-      impact: 'positive',
-      description: `Medicare Plan ${planLevel} includes supplemental vision coverage`,
-    });
-    requestLogger.debug({ planLevel, scoreChange: +30 }, 'Medicare plan: good coverage');
-  } else if (planLevel === 'A' || planLevel === 'D') {
-    score += 20;
-    factors.push({
-      name: 'medicare_plan',
-      impact: 'neutral',
-      description: `Medicare Plan ${planLevel} has limited vision coverage`,
-    });
-    requestLogger.debug({ planLevel, scoreChange: +20 }, 'Medicare plan: limited coverage');
+    requestLogger.debug('Criterion FAILED: No Medicare plan');
+  } else {
+    requestLogger.debug({ planLevel }, 'Criterion PASSED: Has Medicare plan');
   }
 
-  // Factor 2: Colorblindness Diagnosis (REQUIRED)
+  // CRITERION 2: Medicare Plan Covers Premium Eyewear (REQUIRED)
+  // Plans with vision coverage for premium eyewear: Advantage, B, C
+  // Plans with limited/no coverage: A (hospital only), D (prescriptions only)
+  const coveringPlans = ['Advantage', 'B', 'C'];
+  if (planLevel && !coveringPlans.includes(planLevel)) {
+    isQualified = false;
+    failureReasons.push(`Medicare Plan ${planLevel} has limited vision coverage for premium eyewear`);
+    factors.push({
+      name: 'medicare_plan_coverage',
+      impact: 'negative',
+      description: `Medicare Plan ${planLevel} does not include vision coverage for specialized colorblind eyewear`,
+    });
+    requestLogger.debug({ planLevel }, 'Criterion FAILED: Plan does not cover premium eyewear');
+  } else if (planLevel && coveringPlans.includes(planLevel)) {
+    factors.push({
+      name: 'medicare_plan_coverage',
+      impact: 'positive',
+      description: `Medicare ${planLevel} includes vision coverage for premium eyewear`,
+    });
+    requestLogger.debug({ planLevel }, 'Criterion PASSED: Plan covers premium eyewear');
+  }
+
+  // CRITERION 3: Has Colorblindness Diagnosis (REQUIRED - MANDATORY)
   const hasColorblindness = userData.medicareData.hasColorblindness;
   const colorblindType = userData.medicareData.colorblindType;
   if (hasColorblindness === true) {
-    score += 40;
     factors.push({
       name: 'colorblindness',
       impact: 'positive',
       description: colorblindType
-        ? `Diagnosed with ${colorblindType} colorblindness - qualifies for premium eyewear`
-        : 'Diagnosed with colorblindness - qualifies for premium eyewear',
+        ? `Confirmed ${colorblindType} colorblindness diagnosis`
+        : 'Confirmed colorblindness diagnosis',
     });
-    requestLogger.debug({ colorblindType, scoreChange: +40 }, 'Colorblindness: confirmed diagnosis');
+    requestLogger.debug({ colorblindType }, 'Criterion PASSED: Colorblindness diagnosis confirmed');
   } else if (hasColorblindness === false) {
-    score = 0; // Automatic disqualification
+    isQualified = false;
+    failureReasons.push('No colorblindness diagnosis confirmed');
     factors.push({
       name: 'colorblindness',
       impact: 'negative',
-      description: 'No colorblindness diagnosis - does not meet eligibility requirement',
+      description: 'No colorblindness diagnosis - required for premium eyewear program',
     });
-    requestLogger.debug('Colorblindness: no diagnosis (disqualified)');
+    requestLogger.debug('Criterion FAILED: No colorblindness diagnosis');
   } else {
-    score = 0; // Missing required information
+    isQualified = false;
+    failureReasons.push('Colorblindness status not confirmed');
     factors.push({
       name: 'colorblindness',
       impact: 'negative',
-      description: 'Colorblindness status not confirmed',
+      description: 'Colorblindness status unknown or not confirmed',
     });
-    requestLogger.debug('Colorblindness: status unknown (disqualified)');
+    requestLogger.debug('Criterion FAILED: Colorblindness status unknown');
   }
 
-  // Factor 3: Age (Medicare eligibility age is 65+)
-  const age = userData.medicareData.age;
-  if (age !== undefined && age >= 65) {
-    score += 20;
+  // CRITERION 4: Has Medicare Beneficiary Identifier (MBI) (REQUIRED)
+  const medicareNumber = userData.medicareData.medicareNumber;
+  if (!medicareNumber) {
+    isQualified = false;
+    failureReasons.push('Medicare Beneficiary Identifier (MBI) not provided');
     factors.push({
-      name: 'age',
-      impact: 'positive',
-      description: `Age ${age} meets Medicare eligibility (65+)`,
+      name: 'medicare_mbi',
+      impact: 'negative',
+      description: 'Medicare Beneficiary Identifier (MBI) not on file',
     });
-    requestLogger.debug({ age, scoreChange: +20 }, 'Age: Medicare eligible');
-  } else if (age !== undefined && age < 65) {
-    // Under 65 can still have Medicare (disability, etc.)
-    score += 10;
+    requestLogger.debug('Criterion FAILED: No MBI provided');
+  } else {
+    factors.push({
+      name: 'medicare_mbi',
+      impact: 'positive',
+      description: 'Medicare Beneficiary Identifier (MBI) verified',
+    });
+    requestLogger.debug({ mbi: `***${medicareNumber.slice(-2)}` }, 'Criterion PASSED: MBI provided');
+  }
+
+  // INFORMATIONAL: Age (not a qualification criterion - already validated by having Medicare)
+  const age = userData.medicareData.age;
+  if (age !== undefined) {
     factors.push({
       name: 'age',
       impact: 'neutral',
-      description: `Age ${age} - Medicare eligible through disability or other qualification`,
+      description:
+        age >= 65
+          ? `Age ${age} - Standard Medicare eligibility`
+          : `Age ${age} - Medicare eligible (disability or other qualification)`,
     });
-    requestLogger.debug({ age, scoreChange: +10 }, 'Age: early Medicare eligibility');
+    requestLogger.debug({ age }, 'Info: Age documented');
   }
 
-  // Ensure score stays within 0-100 range
-  score = Math.max(0, Math.min(100, score));
+  // Binary result: QUALIFIED (all criteria met) or NOT_QUALIFIED (any criteria failed)
+  const result: ClassificationResult = isQualified ? CLASSIFICATION.QUALIFIED : CLASSIFICATION.NOT_QUALIFIED;
 
-  // Determine result based on score threshold
-  // Threshold: 80+ = QUALIFIED (must have plan + colorblindness)
-  const result: ClassificationResult = score >= 80 ? CLASSIFICATION.QUALIFIED : CLASSIFICATION.NOT_QUALIFIED;
+  // Binary score for API compatibility: 100 if qualified, 0 if not
+  const score = isQualified ? 100 : 0;
 
-  // Generate detailed reason
-  const reason =
-    result === CLASSIFICATION.QUALIFIED
-      ? `Member qualifies for premium eyewear subscription with a score of ${score}/100. Has valid Medicare coverage and confirmed colorblindness diagnosis.`
-      : `Member does not qualify for premium eyewear subscription (score: ${score}/100). ${
-          hasColorblindness === false
-            ? 'No colorblindness diagnosis on file.'
-            : !planLevel
-            ? 'No Medicare plan information available.'
-            : 'Does not meet all eligibility requirements.'
-        }`;
+  // Generate detailed reason based on matching logic
+  let reason: string;
+  if (isQualified) {
+    reason = `Member meets all eligibility criteria for premium eyewear program: Medicare ${planLevel} plan with vision coverage + confirmed colorblindness diagnosis.`;
+  } else {
+    // Provide specific failure reasons
+    if (failureReasons.length === 1) {
+      reason = `Member does not qualify: ${failureReasons[0]}.`;
+    } else {
+      reason = `Member does not qualify for premium eyewear program. Reasons: ${failureReasons.join('; ')}.`;
+    }
+  }
 
   requestLogger.info(
     {
       userId: userData.userId,
-      finalScore: score,
       result,
-      positiveFactors: factors.filter((f) => f.impact === 'positive').length,
-      negativeFactors: factors.filter((f) => f.impact === 'negative').length,
+      criteriaChecked: factors.length,
+      criteriaPassed: factors.filter((f) => f.impact === 'positive').length,
+      criteriaFailed: factors.filter((f) => f.impact === 'negative').length,
+      qualificationMethod: 'binary-matching',
     },
-    'Classification completed'
+    `Classification completed: ${result}`
   );
 
   // Create classification object
@@ -206,7 +224,7 @@ const classifyUser = (userData: UserData): Classification => {
     userId: userData.userId,
     phoneNumber: userData.phoneNumber,
     result,
-    score,
+    score, // Binary: 100 (qualified) or 0 (not qualified)
     reason,
     factors,
     createdAt: new Date().toISOString(),
