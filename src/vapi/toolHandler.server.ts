@@ -1499,9 +1499,41 @@ app.post('/api/vapi/tool-calls', async (req: Request, res: Response) => {
     messageKeys: req.body.message ? Object.keys(req.body.message) : [],
   }, 'DEBUG: Full VAPI tool call request structure');
 
+  // Helper function to extract phone number from tool arguments (fallback when call object is missing)
+  const extractPhoneFromToolArgs = (body: any): string | null => {
+    try {
+      const toolCalls = body.message?.toolCalls || [];
+      for (const toolCall of toolCalls) {
+        const argsString = toolCall.function.arguments;
+        const args = typeof argsString === 'string' ? JSON.parse(argsString) : argsString;
+        if (args.phoneNumber) {
+          return args.phoneNumber;
+        }
+      }
+    } catch (error) {
+      return null;
+    }
+    return null;
+  };
+
   // Extract call ID and phone number for logging context
-  const callId = req.body.call?.id || 'unknown';
-  const customerNumber = req.body.call?.customer?.number || req.body.call?.phoneNumberFrom || 'unknown';
+  // VAPI doesn't always send the "call" object in tool requests, so we use multiple fallback strategies
+  const callId = req.body.call?.id || `pseudo-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  const customerNumber =
+    req.body.call?.customer?.number ||
+    req.body.call?.phoneNumberFrom ||
+    extractPhoneFromToolArgs(req.body) ||
+    'unknown';
+
+  // Log extraction strategy used
+  if (!req.body.call) {
+    logger.info({
+      callId,
+      customerNumber: maskPhoneNumber(customerNumber),
+      extractionMethod: callId.startsWith('pseudo-') ? 'pseudo-generated' : 'from-call-object',
+      phoneSource: customerNumber !== 'unknown' ? 'from-tool-arguments' : 'unknown',
+    }, 'VAPI call object missing - using fallback extraction');
+  }
 
   // Create call-specific logger
   const callLogger = createChildLogger({
