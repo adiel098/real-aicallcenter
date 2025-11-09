@@ -1,0 +1,65 @@
+AI Engineering Home Task – Alex AI / VICI Integration
+Business Case
+A healthcare retailer provides premium eyewear for colorblind Medicare members under a
+subscription-based program. Incoming callers are verified through an initial screening
+(name and city) before being handed over to an AI calling agent. The AI agent gets the phone
+number and name of this member (live from the Phone system) combined with the member
+demographics information from this retailer CRM and needs to cross-checks the caller’s
+Medicare plan level and eligibility (another external non-crm system) combining real-time
+conversation data with the member information already on file to determine qualification for
+the premium subscription and next-step fulfillment.
+The final outcome needs to be sent into this retailer CRM system.
+Objective
+Create a working VAPI assistant capable of dealing with this situation.
+Demonstrate your flow for AI agent integrations with a legacy dialer (VICI) to manage inbound
+call workflows using Twilio/VAPI for live conversations and API feedback loops for call
+dispositions, data retrieval, and lead routing.
+
+Instructions
+1. System Understanding
+● Review the provided “Alex AI / VICI Integration” diagram.
+● Write a short technical summary explaining the system’s end-to-end logic — from VICI
+initiating an outbound call to the AI agent completing or dispositioning it.
+● Identify each integration layer (e.g., telephony, AI logic, CRM, data services) and its
+purpose.
+
+2. Flow Analysis *2 page PDF 2 Diagram attached
+Explain in your own words:
+● What triggers each state change (Idle → Pre-Connect → Connected → API Disposition
+→ Next Call).
+
+● How you would design the call event listener to detect voicemail, dead air, IVR, or live
+person responses.
+● Where Twilio/VAPI should handle call media vs. where your backend should handle
+conversation state.
+
+3. API & Data Layer Design
+Describe how you’d implement:
+● API requests between the AI agent and VICI for call dispositions (SALE, NQI, NA, etc.).
+● Validation workflows (SSN → MBI → Insurance Check).
+● Error-handling logic for retries, invalid data, or unexpected responses.
+● Data persistence model (what data is stored, where, and why).
+
+4. Conversational Intelligence
+Outline how the AI agent should:
+● Detect and adapt to voicemail, beeps, busy tones, or custom greetings.
+● Determine whether a conversation is a “Live Contact” or “Not Interested” scenario.
+● Manage interruptions, re-prompts, or handovers to a human agent.
+
+5. Scalability & Reliability
+Propose your approach for:
+● Scaling to 100+ concurrent calls using Twilio SIP or WebRTC connections.
+● Monitoring performance (call latency, dropped calls, success ratios).
+● Handling agent hours (9:00am–5:45pm EST) and after-hours call-back scheduling.
+
+6. Implementation Sketch
+Optionally, include:
+● Pseudocode or API sequence diagram showing the interaction between
+VICI ↔ AI Agent ↔ CRM ↔ Twilio/VAPI.
+
+● How you’d test this system locally (mock APIs, simulated Twilio calls, etc.).
+
+Deliverable
+1 - Inbound Phone Number capable of covering this scenario.
+2 - A minimal written document or notebook covering the six sections above (Focus on clarity
+of architecture, reasoning, and decision trade-offs — not production-level code)

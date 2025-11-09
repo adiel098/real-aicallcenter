@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Screening Dashboard - VAPI CRM</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <header class="dashboard-header">
+            <div class="header-content">
+                <h1>🏥 Medical Screening Dashboard</h1>
+                <div class="header-actions">
+                    <button id="refreshBtn" class="btn btn-primary">
+                        <span id="refreshIcon">🔄</span> Refresh
+                    </button>
+                    <div class="status-indicator" id="statusIndicator">
+                        <span class="status-dot"></span>
+                        <span id="statusText">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="tabs-nav">
+            <button class="tab-btn active" data-tab="overview">📊 Overview</button>
+            <button class="tab-btn" data-tab="leads">👥 Leads</button>
+            <button class="tab-btn" data-tab="users">📋 User Data</button>
+            <button class="tab-btn" data-tab="classifications">✅ Classifications</button>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="dashboard-main">
+
+            <!-- Overview Tab -->
+            <div id="overview" class="tab-content active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-info">
+                            <h3 id="totalLeads">-</h3>
+                            <p>Total Leads</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📝</div>
+                        <div class="stat-info">
+                            <h3 id="totalUsers">-</h3>
+                            <p>Users with Data</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">✅</div>
+                        <div class="stat-info">
+                            <h3 id="totalClassifications">-</h3>
+                            <p>Classifications</p>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📈</div>
+                        <div class="stat-info">
+                            <h3 id="completionRate">-</h3>
+                            <p>Data Completion</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overview-section">
+                    <h2>Recent Activity</h2>
+                    <div id="recentActivity" class="activity-list">
+                        <p class="loading">Loading activity...</p>
+                    </div>
+                </div>
+
+                <div class="overview-charts">
+                    <div class="chart-card">
+                        <h3>Classification Results</h3>
+                        <div id="classificationChart" class="chart-container">
+                            <div class="chart-bars">
+                                <div class="chart-bar-group">
+                                    <div class="chart-bar acceptable">
+                                        <span class="chart-bar-value" id="acceptableCount">0</span>
+                                    </div>
+                                    <span class="chart-label">Acceptable</span>
+                                </div>
+                                <div class="chart-bar-group">
+                                    <div class="chart-bar not-acceptable">
+                                        <span class="chart-bar-value" id="notAcceptableCount">0</span>
+                                    </div>
+                                    <span class="chart-label">Not Acceptable</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Leads Tab -->
+            <div id="leads" class="tab-content">
+                <div class="content-header">
+                    <h2>All Leads</h2>
+                    <div class="search-box">
+                        <input type="text" id="leadsSearch" placeholder="🔍 Search by name, phone, or email...">
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="leadsTable" class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Phone Number</th>
+                                <th>Email</th>
+                                <th>Source</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="leadsTableBody">
+                            <tr>
+                                <td colspan="6" class="loading">Loading leads...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Users Tab -->
+            <div id="users" class="tab-content">
+                <div class="content-header">
+                    <h2>User Data</h2>
+                    <div class="search-box">
+                        <input type="text" id="usersSearch" placeholder="🔍 Search by name or phone...">
+                    </div>
+                </div>
+                <div id="usersGrid" class="users-grid">
+                    <p class="loading">Loading user data...</p>
+                </div>
+            </div>
+
+            <!-- Classifications Tab -->
+            <div id="classifications" class="tab-content">
+                <div class="content-header">
+                    <h2>Classification Results</h2>
+                    <div class="filter-buttons">
+                        <button class="filter-btn active" data-filter="all">All</button>
+                        <button class="filter-btn" data-filter="ACCEPTABLE">✅ Acceptable</button>
+                        <button class="filter-btn" data-filter="NOT_ACCEPTABLE">❌ Not Acceptable</button>
+                    </div>
+                </div>
+                <div id="classificationsGrid" class="classifications-grid">
+                    <p class="loading">Loading classifications...</p>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Modal for detailed view -->
+        <div id="detailModal" class="modal">
+            <div class="modal-content">
+                <span class="modal-close">&times;</span>
+                <div id="modalBody"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>
