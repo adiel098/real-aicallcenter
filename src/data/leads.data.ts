@@ -114,3 +114,39 @@ export const findLeadByPhoneNumber = (phoneNumber: string): Lead | undefined => 
 export const leadExists = (phoneNumber: string): boolean => {
   return findLeadByPhoneNumber(phoneNumber) !== undefined;
 };
+
+/**
+ * Create a new lead in the database
+ * Generates a unique leadId and timestamps
+ *
+ * @param leadData - Partial lead data (phoneNumber, name, email, city required)
+ * @returns Newly created Lead object
+ */
+export const createLead = (leadData: {
+  phoneNumber: string;
+  name: string;
+  email: string;
+  city: string;
+  source?: string;
+  notes?: string;
+}): Lead => {
+  // Generate unique leadId
+  const leadId = `lead-${String(leadsDatabase.length + 1).padStart(3, '0')}`;
+
+  // Create new lead object
+  const newLead: Lead = {
+    leadId,
+    phoneNumber: leadData.phoneNumber,
+    name: leadData.name,
+    email: leadData.email,
+    city: leadData.city,
+    createdAt: new Date().toISOString(),
+    source: leadData.source || 'inbound_call',
+    notes: leadData.notes || '',
+  };
+
+  // Add to database
+  leadsDatabase.push(newLead);
+
+  return newLead;
+};

@@ -154,6 +154,11 @@ export interface TransferCallArgs {
   extension?: string; // Default: 2002 (human CRM agent)
 }
 
+/** Arguments for send_form_link_sms tool */
+export interface SendFormLinkSMSArgs {
+  phoneNumber: string;
+}
+
 /**
  * VAPI Call Event Types
  *

@@ -15,6 +15,8 @@ import {
   findUserDataByPhoneNumber,
   updateUserData,
   isUserDataComplete,
+  createUserData,
+  userExists,
 } from '../data/userData.data';
 import { normalizePhoneNumber, isValidPhoneNumber, maskPhoneNumber } from '../utils/phoneNumber.util';
 import { UserDataResponse, UserDataUpdateRequest } from '../types/userData.types';
@@ -275,6 +277,96 @@ app.get('/api/users', (_req: Request, res: Response) => {
     incompleteCount,
     users: userDataDatabase,
   });
+});
+
+/**
+ * POST /api/users
+ *
+ * Create a new user in the system
+ * Used when a new user fills out the web form with Medicare data
+ *
+ * @body phoneNumber - Phone number (E.164 format, required)
+ * @body name - Full name (required)
+ * @body medicareData - Medicare information object (optional, can be partial)
+ * @returns Newly created user object with missing fields calculation
+ */
+app.post('/api/users', (req: Request, res: Response) => {
+  const requestLogger = (res as any).requestLogger;
+  const { phoneNumber, name, medicareData } = req.body;
+
+  requestLogger.debug({ phoneNumber: maskPhoneNumber(phoneNumber) }, 'Creating new user');
+
+  // Validate required fields
+  if (!phoneNumber || !name) {
+    requestLogger.warn('Missing required fields for user creation');
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      message: 'Missing required fields: phoneNumber and name are required',
+    });
+  }
+
+  // Validate phone number format
+  if (!isValidPhoneNumber(phoneNumber)) {
+    requestLogger.warn({ phoneNumber: maskPhoneNumber(phoneNumber) }, 'Invalid phone number format');
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      message: ERROR_MESSAGES.INVALID_PHONE,
+    });
+  }
+
+  // Normalize phone number
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+  // Check if user already exists
+  if (userExists(normalizedPhone)) {
+    requestLogger.warn(
+      { phoneNumber: maskPhoneNumber(normalizedPhone) },
+      'User already exists with this phone number'
+    );
+
+    const existingUser = findUserDataByPhoneNumber(normalizedPhone);
+    return res.status(HTTP_STATUS.CONFLICT).json({
+      success: false,
+      message: 'A user with this phone number already exists',
+      existingUser,
+    });
+  }
+
+  // Create new user
+  try {
+    const newUser = createUserData({
+      phoneNumber: normalizedPhone,
+      name,
+      medicareData,
+    });
+
+    requestLogger.info(
+      {
+        phoneNumber: maskPhoneNumber(normalizedPhone),
+        userId: newUser.userId,
+        userName: newUser.name,
+        missingFieldsCount: newUser.missingFields.length,
+      },
+      'User created successfully'
+    );
+
+    const response: UserDataResponse = {
+      found: true,
+      userData: newUser,
+      isComplete: isUserDataComplete(newUser),
+      missingFields: newUser.missingFields,
+      message: 'User created successfully',
+    };
+
+    return res.status(HTTP_STATUS.CREATED).json(response);
+  } catch (error: any) {
+    requestLogger.error({ error: error.message }, 'Failed to create user');
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Failed to create user',
+      error: error.message,
+    });
+  }
 });
 
 /**

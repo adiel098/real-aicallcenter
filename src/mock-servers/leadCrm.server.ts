@@ -10,7 +10,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import logger from '../config/logger';
 import { PORTS, HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../config/constants';
-import { leadsDatabase, findLeadByPhoneNumber } from '../data/leads.data';
+import { leadsDatabase, findLeadByPhoneNumber, createLead, leadExists } from '../data/leads.data';
 import { normalizePhoneNumber, isValidPhoneNumber, maskPhoneNumber } from '../utils/phoneNumber.util';
 import { LeadLookupResponse } from '../types/lead.types';
 
@@ -134,6 +134,95 @@ app.get('/api/leads', (_req: Request, res: Response) => {
     count,
     leads: leadsDatabase,
   });
+});
+
+/**
+ * POST /api/leads
+ *
+ * Create a new lead in the system
+ * Used when a new user fills out the web form
+ *
+ * @body phoneNumber - Phone number (E.164 format, required)
+ * @body name - Full name (required)
+ * @body email - Email address (required)
+ * @body city - City (required)
+ * @body source - Lead source (optional, defaults to "inbound_call")
+ * @body notes - Additional notes (optional)
+ * @returns Newly created lead object
+ */
+app.post('/api/leads', (req: Request, res: Response) => {
+  const requestLogger = (res as any).requestLogger;
+  const { phoneNumber, name, email, city, source, notes } = req.body;
+
+  requestLogger.debug({ phoneNumber: maskPhoneNumber(phoneNumber) }, 'Creating new lead');
+
+  // Validate required fields
+  if (!phoneNumber || !name || !email || !city) {
+    requestLogger.warn('Missing required fields for lead creation');
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      message: 'Missing required fields: phoneNumber, name, email, city are required',
+    });
+  }
+
+  // Validate phone number format
+  if (!isValidPhoneNumber(phoneNumber)) {
+    requestLogger.warn({ phoneNumber: maskPhoneNumber(phoneNumber) }, 'Invalid phone number format');
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      success: false,
+      message: ERROR_MESSAGES.INVALID_PHONE,
+    });
+  }
+
+  // Normalize phone number
+  const normalizedPhone = normalizePhoneNumber(phoneNumber);
+
+  // Check if lead already exists
+  if (leadExists(normalizedPhone)) {
+    requestLogger.warn(
+      { phoneNumber: maskPhoneNumber(normalizedPhone) },
+      'Lead already exists with this phone number'
+    );
+    return res.status(HTTP_STATUS.CONFLICT).json({
+      success: false,
+      message: 'A lead with this phone number already exists',
+      existingLead: findLeadByPhoneNumber(normalizedPhone),
+    });
+  }
+
+  // Create new lead
+  try {
+    const newLead = createLead({
+      phoneNumber: normalizedPhone,
+      name,
+      email,
+      city,
+      source,
+      notes,
+    });
+
+    requestLogger.info(
+      {
+        phoneNumber: maskPhoneNumber(normalizedPhone),
+        leadId: newLead.leadId,
+        leadName: newLead.name,
+      },
+      'Lead created successfully'
+    );
+
+    return res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      message: 'Lead created successfully',
+      lead: newLead,
+    });
+  } catch (error: any) {
+    requestLogger.error({ error: error.message }, 'Failed to create lead');
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'Failed to create lead',
+      error: error.message,
+    });
+  }
 });
 
 /**

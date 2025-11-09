@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medicare Eligibility Information Form</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 40px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .required {
+            color: #e74c3c;
+        }
+
+        .form-group input[type="text"],
+        .form-group input[type="email"],
+        .form-group input[type="number"],
+        .form-group input[type="date"],
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group input:disabled {
+            background-color: #f5f5f5;
+            cursor: not-allowed;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-group small {
+            display: block;
+            color: #999;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .radio-group {
+            display: flex;
+            gap: 20px;
+            margin-top: 8px;
+        }
+
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            font-weight: normal;
+            cursor: pointer;
+        }
+
+        .radio-group input[type="radio"] {
+            margin-right: 6px;
+            cursor: pointer;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            font-size: 12px;
+            margin-top: 4px;
+            display: none;
+        }
+
+        .form-group.error input,
+        .form-group.error select {
+            border-color: #e74c3c;
+        }
+
+        .form-group.error .error-message {
+            display: block;
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .submit-btn:active {
+            transform: translateY(0);
+        }
+
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .loading.active {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-error {
+            background-color: #fee;
+            border-left: 4px solid #e74c3c;
+            color: #c0392b;
+        }
+
+        .alert-success {
+            background-color: #efe;
+            border-left: 4px solid #27ae60;
+            color: #229954;
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #667eea;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .section-title:first-of-type {
+            margin-top: 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Medicare Eligibility Form</h1>
+            <p>Please complete the form below to continue your Medicare eligibility screening</p>
+        </div>
+
+        <div id="alertBox" class="alert"></div>
+
+        <form id="medicareForm">
+            <!-- Basic Information Section -->
+            <div class="section-title">Basic Information</div>
+
+            <div class="form-group">
+                <label for="phoneNumber">Phone Number <span class="required">*</span></label>
+                <input type="text" id="phoneNumber" name="phoneNumber" readonly required>
+                <small>This field is pre-filled and cannot be changed</small>
+            </div>
+
+            <div class="form-group">
+                <label for="name">Full Name <span class="required">*</span></label>
+                <input type="text" id="name" name="name" placeholder="e.g., John Smith" required>
+                <span class="error-message">Please enter your full name</span>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email Address <span class="required">*</span></label>
+                <input type="email" id="email" name="email" placeholder="e.g., john.smith@example.com" required>
+                <span class="error-message">Please enter a valid email address</span>
+            </div>
+
+            <div class="form-group">
+                <label for="city">City <span class="required">*</span></label>
+                <input type="text" id="city" name="city" placeholder="e.g., Washington" required>
+                <span class="error-message">Please enter your city</span>
+            </div>
+
+            <!-- Medicare Information Section -->
+            <div class="section-title">Medicare Information</div>
+
+            <div class="form-group">
+                <label for="age">Age <span class="required">*</span></label>
+                <input type="number" id="age" name="age" placeholder="e.g., 68" min="18" max="120" required>
+                <span class="error-message">Please enter a valid age</span>
+            </div>
+
+            <div class="form-group">
+                <label for="dateOfBirth">Date of Birth <span class="required">*</span></label>
+                <input type="date" id="dateOfBirth" name="dateOfBirth" required>
+                <span class="error-message">Please enter your date of birth</span>
+            </div>
+
+            <div class="form-group">
+                <label for="medicareNumber">Medicare Beneficiary Identifier (MBI) <span class="required">*</span></label>
+                <input type="text" id="medicareNumber" name="medicareNumber" placeholder="e.g., 1AB2-CD3-EF45" maxlength="13" required>
+                <small>Format: 1AB2-CD3-EF45 (11 characters with dashes)</small>
+                <span class="error-message">Please enter a valid MBI (format: 1AB2-CD3-EF45)</span>
+            </div>
+
+            <div class="form-group">
+                <label for="ssnLast4">Last 4 Digits of Social Security Number <span class="required">*</span></label>
+                <input type="text" id="ssnLast4" name="ssnLast4" placeholder="e.g., 1234" maxlength="4" pattern="[0-9]{4}" required>
+                <small>Enter only the last 4 digits</small>
+                <span class="error-message">Please enter 4 digits</span>
+            </div>
+
+            <div class="form-group">
+                <label for="planLevel">Medicare Plan Level <span class="required">*</span></label>
+                <select id="planLevel" name="planLevel" required>
+                    <option value="">-- Select Plan Level --</option>
+                    <option value="A">Plan A</option>
+                    <option value="B">Plan B</option>
+                    <option value="C">Plan C</option>
+                    <option value="D">Plan D</option>
+                    <option value="Advantage">Medicare Advantage</option>
+                </select>
+                <span class="error-message">Please select your Medicare plan level</span>
+            </div>
+
+            <!-- Medical Information Section -->
+            <div class="section-title">Medical Information</div>
+
+            <div class="form-group">
+                <label>Do you have colorblindness? <span class="required">*</span></label>
+                <div class="radio-group">
+                    <label>
+                        <input type="radio" name="hasColorblindness" value="true" required>
+                        Yes
+                    </label>
+                    <label>
+                        <input type="radio" name="hasColorblindness" value="false" required>
+                        No
+                    </label>
+                </div>
+                <span class="error-message">Please select an option</span>
+            </div>
+
+            <div class="form-group" id="colorblindTypeGroup" style="display: none;">
+                <label for="colorblindType">Type of Colorblindness <span class="required">*</span></label>
+                <select id="colorblindType" name="colorblindType">
+                    <option value="">-- Select Type --</option>
+                    <option value="red-green (deuteranopia)">Red-Green (Deuteranopia)</option>
+                    <option value="red-green (protanopia)">Red-Green (Protanopia)</option>
+                    <option value="blue-yellow (tritanopia)">Blue-Yellow (Tritanopia)</option>
+                    <option value="complete (monochromacy)">Complete (Monochromacy)</option>
+                    <option value="other">Other</option>
+                </select>
+                <span class="error-message">Please select the type of colorblindness</span>
+            </div>
+
+            <div class="form-group">
+                <label for="currentEyewear">Current Eyewear <span class="required">*</span></label>
+                <input type="text" id="currentEyewear" name="currentEyewear" placeholder="e.g., Standard prescription glasses, No current eyewear, Bifocals" required>
+                <span class="error-message">Please describe your current eyewear</span>
+            </div>
+
+            <div class="form-group">
+                <label for="medicalHistory">Medical History (Optional)</label>
+                <textarea id="medicalHistory" name="medicalHistory" placeholder="e.g., hypertension, type 2 diabetes, glaucoma"></textarea>
+                <small>List any relevant medical conditions, separated by commas</small>
+            </div>
+
+            <div class="form-group">
+                <label for="currentMedications">Current Medications (Optional)</label>
+                <textarea id="currentMedications" name="currentMedications" placeholder="e.g., metformin, lisinopril, latanoprost eye drops"></textarea>
+                <small>List current medications, separated by commas</small>
+            </div>
+
+            <button type="submit" class="submit-btn" id="submitBtn">Submit Medicare Information</button>
+        </form>
+
+        <div class="loading" id="loadingIndicator">
+            <div class="spinner"></div>
+            <p style="margin-top: 10px; color: #666;">Submitting your information...</p>
+        </div>
+    </div>
+
+    <script>
+        // Get URL parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const phone = urlParams.get('phone');
+
+        // Pre-fill phone number
+        if (phone) {
+            document.getElementById('phoneNumber').value = phone;
+        }
+
+        // Show/hide colorblind type field based on colorblindness selection
+        const colorblindnessRadios = document.querySelectorAll('input[name="hasColorblindness"]');
+        const colorblindTypeGroup = document.getElementById('colorblindTypeGroup');
+        const colorblindTypeSelect = document.getElementById('colorblindType');
+
+        colorblindnessRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.value === 'true') {
+                    colorblindTypeGroup.style.display = 'block';
+                    colorblindTypeSelect.required = true;
+                } else {
+                    colorblindTypeGroup.style.display = 'none';
+                    colorblindTypeSelect.required = false;
+                    colorblindTypeSelect.value = '';
+                }
+            });
+        });
+
+        // Form validation and submission
+        const form = document.getElementById('medicareForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const alertBox = document.getElementById('alertBox');
+
+        function showAlert(message, type) {
+            alertBox.textContent = message;
+            alertBox.className = `alert alert-${type} show`;
+            alertBox.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function hideAlert() {
+            alertBox.className = 'alert';
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideAlert();
+
+            // Validate token
+            if (!token) {
+                showAlert('Invalid form link. Please request a new link.', 'error');
+                return;
+            }
+
+            // Get form data
+            const formData = new FormData(form);
+            const data = {};
+
+            formData.forEach((value, key) => {
+                data[key] = value;
+            });
+
+            // Parse medical history and medications into arrays
+            if (data.medicalHistory) {
+                data.medicalHistory = data.medicalHistory.split(',').map(s => s.trim()).filter(s => s);
+            } else {
+                delete data.medicalHistory;
+            }
+
+            if (data.currentMedications) {
+                data.currentMedications = data.currentMedications.split(',').map(s => s.trim()).filter(s => s);
+            } else {
+                delete data.currentMedications;
+            }
+
+            // Convert hasColorblindness to boolean
+            data.hasColorblindness = data.hasColorblindness === 'true';
+
+            // If no colorblindness, remove colorblindType
+            if (!data.hasColorblindness) {
+                delete data.colorblindType;
+            }
+
+            // Convert age to number
+            data.age = parseInt(data.age);
+
+            // Disable submit button and show loading
+            submitBtn.disabled = true;
+            loadingIndicator.classList.add('active');
+            form.style.display = 'none';
+
+            try {
+                // Submit to backend
+                const response = await fetch('/api/form-submission', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        token,
+                        formData: data,
+                    }),
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    // Redirect to success page
+                    window.location.href = '/form-success.html';
+                } else {
+                    throw new Error(result.message || 'Failed to submit form');
+                }
+            } catch (error) {
+                loadingIndicator.classList.remove('active');
+                form.style.display = 'block';
+                submitBtn.disabled = false;
+                showAlert(error.message || 'An error occurred. Please try again.', 'error');
+            }
+        });
+
+        // Client-side validation for MBI format
+        const mbiInput = document.getElementById('medicareNumber');
+        mbiInput.addEventListener('input', (e) => {
+            let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+            // Auto-format with dashes
+            if (value.length > 4) {
+                value = value.slice(0, 4) + '-' + value.slice(4);
+            }
+            if (value.length > 8) {
+                value = value.slice(0, 8) + '-' + value.slice(8);
+            }
+            if (value.length > 13) {
+                value = value.slice(0, 13);
+            }
+
+            e.target.value = value;
+        });
+
+        // SSN last 4 validation
+        const ssnInput = document.getElementById('ssnLast4');
+        ssnInput.addEventListener('input', (e) => {
+            e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
+        });
+    </script>
+</body>
+</html>

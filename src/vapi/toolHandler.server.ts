@@ -24,6 +24,7 @@ import {
   ValidateMedicareEligibilityArgs,
   ScheduleCallbackArgs,
   TransferCallArgs,
+  SendFormLinkSMSArgs,
   VAPICallStartedEvent,
   VAPICallEndedEvent,
   VAPIMessageEvent,
@@ -37,6 +38,9 @@ import { medicareService } from '../services/medicare.service';
 import { callStateService, CallStatus } from '../services/callState.service';
 import { callStatusDetectionService } from '../services/callStatusDetection.service';
 import { viciService } from '../services/vici.service';
+import { sendFormLinkSMS } from '../services/sms.service';
+import { generateFormToken, buildFormUrl, validateFormToken, useFormToken } from '../services/token.service';
+import axios from 'axios';
 
 // Initialize Express app
 const app = express();
@@ -1097,17 +1101,93 @@ const handleTransferCall = async (
 };
 
 /**
+ * Handle send_form_link_sms tool call
+ * Sends SMS with secure form link to collect user data
+ * Triggered when check_lead returns not found (new user)
+ */
+const handleSendFormLinkSMS = async (
+  args: SendFormLinkSMSArgs,
+  callLogger: any
+): Promise<string> => {
+  callLogger.info(
+    {
+      phoneNumber: maskPhoneNumber(args.phoneNumber),
+    },
+    'Tool: send_form_link_sms'
+  );
+
+  try {
+    // Get ngrok URL from environment
+    const ngrokUrl = process.env.NGROK_URL;
+    if (!ngrokUrl) {
+      callLogger.error('NGROK_URL not configured in environment variables');
+      return JSON.stringify({
+        success: false,
+        error: 'System configuration error',
+        message: `I apologize, but I'm having trouble sending the text message right now. Could you please provide your name and email so I can have someone reach out to you?`,
+      });
+    }
+
+    // Generate secure form token
+    const formToken = generateFormToken(args.phoneNumber);
+
+    // Build form URL with token and phone number
+    const formUrl = buildFormUrl(ngrokUrl, formToken.token, args.phoneNumber);
+
+    callLogger.info(
+      {
+        token: formToken.token,
+        expiresAt: formToken.expiresAt,
+        formUrl,
+      },
+      'Form token generated and URL built'
+    );
+
+    // Send SMS with form link
+    const smsSent = await sendFormLinkSMS(args.phoneNumber, formUrl);
+
+    if (!smsSent) {
+      callLogger.error('Failed to send SMS via Twilio');
+      return JSON.stringify({
+        success: false,
+        error: 'SMS delivery failed',
+        message: `I'm having trouble sending the text message to your phone. Could you please provide your name and email instead so I can send you the form link via email?`,
+      });
+    }
+
+    callLogger.info('SMS sent successfully with form link');
+
+    return JSON.stringify({
+      success: true,
+      smsSent: true,
+      formUrl,
+      expiresAt: formToken.expiresAt.toISOString(),
+      message: `Perfect! I've sent you a text message with a secure link to complete your Medicare information. The link will expire in 24 hours. Please fill out the form and then call us back at your convenience. Is there anything else I can help you with right now?`,
+    });
+  } catch (error: any) {
+    callLogger.error({ error: error.message }, 'Failed to send form link SMS');
+
+    return JSON.stringify({
+      success: false,
+      error: error.message,
+      message: `I apologize, but I'm having trouble sending the text message right now. Could you please provide your name and email so I can have someone reach out to you with the information form?`,
+    });
+  }
+};
+
+/**
  * Main tool call router
  * Routes incoming tool calls to the appropriate handler function
  *
- * Available tools (7 total):
+ * Available tools (8 total):
  * - check_lead: Find caller in system
  * - get_user_data: Get Medicare data and missing fields
  * - update_user_data: Collect Medicare info from conversation
- * - validate_medicare_eligibility: SSN → MBI → Insurance validation (NEW)
+ * - validate_medicare_eligibility: SSN → MBI → Insurance validation
  * - classify_and_save_user: Classify eligibility + Save + Send VICI disposition (all-in-one)
- * - schedule_callback: Schedule callback through VICI (NEW)
- * - transfer_call: Transfer to human agent extension 2002 (NEW)
+ * - schedule_callback: Schedule callback through VICI
+ * - transfer_call: Transfer to human agent extension 2002
+ * - send_form_link_sms: Send SMS with data collection form link (NEW)
  */
 const handleToolCall = async (toolName: string, args: any, callLogger: any, callId: string): Promise<string> => {
   callLogger.debug({ toolName, args }, 'Routing tool call');
@@ -1135,13 +1215,16 @@ const handleToolCall = async (toolName: string, args: any, callLogger: any, call
       case 'transfer_call':
         return await handleTransferCall(args as TransferCallArgs, callLogger, callId);
 
+      case 'send_form_link_sms':
+        return await handleSendFormLinkSMS(args as SendFormLinkSMSArgs, callLogger);
+
       // Legacy tools - removed for simplified workflow
       // classify_user and save_classification_result have been replaced by classify_and_save_user
 
       default:
         callLogger.warn({ toolName }, 'Unknown tool name');
         return JSON.stringify({
-          error: `Unknown tool: ${toolName}. Available tools: check_lead, get_user_data, update_user_data, validate_medicare_eligibility, classify_and_save_user, schedule_callback, transfer_call`,
+          error: `Unknown tool: ${toolName}. Available tools: check_lead, get_user_data, update_user_data, validate_medicare_eligibility, classify_and_save_user, schedule_callback, transfer_call, send_form_link_sms`,
         });
     }
   } catch (error: any) {
@@ -1652,6 +1735,20 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         required: ['phoneNumber', 'transferReason'],
       },
     },
+    {
+      name: 'send_form_link_sms',
+      description: 'Send SMS with secure form link for new user data collection. Use when check_lead returns not found (new user not in CRM system). Assistant should ask for phone number if not available from caller ID, then call this tool to send form link.',
+      parameters: {
+        type: 'object',
+        properties: {
+          phoneNumber: {
+            type: 'string',
+            description: 'Phone number in E.164 format (e.g., +12025551234)',
+          },
+        },
+        required: ['phoneNumber'],
+      },
+    },
   ];
 
   res.status(HTTP_STATUS.OK).json({
@@ -1676,6 +1773,136 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
       DAIR: 'Dead Air - 6+ seconds silence',
     },
   });
+});
+
+/**
+ * POST /api/form-submission
+ *
+ * Handle web form submission for new user data collection
+ * Creates both lead and user data records in respective CRMs
+ */
+app.post('/api/form-submission', async (req: Request, res: Response) => {
+  const requestLogger = (res as any).requestLogger;
+  const { token, formData } = req.body;
+
+  requestLogger.info('Processing form submission');
+
+  try {
+    // Validate token
+    if (!token) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Token is required',
+      });
+    }
+
+    const tokenValidation = validateFormToken(token);
+    if (!tokenValidation.valid) {
+      requestLogger.warn({ token }, 'Invalid or expired token');
+      return res.status(HTTP_STATUS.UNAUTHORIZED).json({
+        success: false,
+        message: tokenValidation.error || 'Invalid or expired form link',
+      });
+    }
+
+    const phoneNumber = tokenValidation.phoneNumber!;
+    requestLogger.info({ phoneNumber: maskPhoneNumber(phoneNumber) }, 'Token validated');
+
+    // Validate required form fields
+    if (!formData || !formData.name || !formData.email || !formData.city) {
+      return res.status(HTTP_STATUS.BAD_REQUEST).json({
+        success: false,
+        message: 'Missing required fields: name, email, and city are required',
+      });
+    }
+
+    // Step 1: Create lead in Lead CRM
+    requestLogger.info('Creating lead in Lead CRM');
+    const leadResponse = await axios.post(`http://localhost:${PORTS.LEAD_CRM}/api/leads`, {
+      phoneNumber,
+      name: formData.name,
+      email: formData.email,
+      city: formData.city,
+      source: 'web_form',
+      notes: 'User completed web form via SMS link',
+    });
+
+    if (!leadResponse.data.success) {
+      throw new Error('Failed to create lead');
+    }
+
+    const lead = leadResponse.data.lead;
+    requestLogger.info({ leadId: lead.leadId }, 'Lead created successfully');
+
+    // Step 2: Create user data in User Data CRM
+    requestLogger.info('Creating user data in User Data CRM');
+
+    const medicareData: any = {};
+
+    // Map form data to medicareData structure
+    if (formData.age) medicareData.age = formData.age;
+    if (formData.city) medicareData.city = formData.city;
+    if (formData.medicareNumber) medicareData.medicareNumber = formData.medicareNumber;
+    if (formData.planLevel) medicareData.planLevel = formData.planLevel;
+    if (formData.hasColorblindness !== undefined) {
+      medicareData.hasColorblindness = formData.hasColorblindness;
+    }
+    if (formData.colorblindType) medicareData.colorblindType = formData.colorblindType;
+    if (formData.currentEyewear) medicareData.currentEyewear = formData.currentEyewear;
+    if (formData.medicalHistory) medicareData.medicalHistory = formData.medicalHistory;
+    if (formData.currentMedications) medicareData.currentMedications = formData.currentMedications;
+
+    const userDataResponse = await axios.post(`http://localhost:${PORTS.USER_DATA_CRM}/api/users`, {
+      phoneNumber,
+      name: formData.name,
+      medicareData,
+    });
+
+    if (!userDataResponse.data.found) {
+      throw new Error('Failed to create user data');
+    }
+
+    const userData = userDataResponse.data.userData;
+    requestLogger.info(
+      {
+        userId: userData.userId,
+        missingFieldsCount: userData.missingFields.length,
+      },
+      'User data created successfully'
+    );
+
+    // Mark token as used
+    useFormToken(token);
+    requestLogger.info('Token marked as used');
+
+    return res.status(HTTP_STATUS.CREATED).json({
+      success: true,
+      message: 'Form submitted successfully. You can now call back to complete your Medicare eligibility screening.',
+      lead,
+      userData: {
+        userId: userData.userId,
+        isComplete: userDataResponse.data.isComplete,
+        missingFields: userData.missingFields,
+      },
+    });
+  } catch (error: any) {
+    requestLogger.error({ error: error.message }, 'Form submission failed');
+
+    // Handle specific error cases
+    if (error.response?.status === 409) {
+      // User/lead already exists
+      return res.status(HTTP_STATUS.CONFLICT).json({
+        success: false,
+        message: 'A user with this phone number already exists in our system. Please call us directly.',
+      });
+    }
+
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
+      success: false,
+      message: 'An error occurred while processing your submission. Please try again or call us directly.',
+      error: error.message,
+    });
+  }
 });
 
 /**

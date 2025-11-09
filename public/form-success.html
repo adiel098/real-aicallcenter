@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Form Submitted Successfully</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            padding: 50px 40px;
+            text-align: center;
+        }
+
+        .success-icon {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0 auto 30px;
+            animation: scaleIn 0.5s ease-out;
+        }
+
+        .success-icon svg {
+            width: 50px;
+            height: 50px;
+            stroke: white;
+            stroke-width: 3;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            animation: checkmark 0.8s ease-in-out 0.3s both;
+        }
+
+        @keyframes scaleIn {
+            0% {
+                transform: scale(0);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        @keyframes checkmark {
+            0% {
+                stroke-dasharray: 0, 100;
+            }
+            100% {
+                stroke-dasharray: 100, 0;
+            }
+        }
+
+        h1 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 16px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 30px;
+            line-height: 1.6;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            text-align: left;
+        }
+
+        .info-box h2 {
+            color: #667eea;
+            font-size: 18px;
+            margin-bottom: 12px;
+        }
+
+        .info-box p {
+            color: #555;
+            font-size: 14px;
+            line-height: 1.8;
+            margin-bottom: 10px;
+        }
+
+        .info-box p:last-child {
+            margin-bottom: 0;
+        }
+
+        .phone-number {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 24px;
+            font-weight: 600;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 20px 0;
+            letter-spacing: 1px;
+        }
+
+        .steps {
+            text-align: left;
+            margin-top: 30px;
+        }
+
+        .steps h3 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 16px;
+        }
+
+        .step {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .step-number {
+            background: #667eea;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: 600;
+            font-size: 14px;
+            flex-shrink: 0;
+            margin-right: 12px;
+        }
+
+        .step-content {
+            color: #555;
+            font-size: 14px;
+            line-height: 1.6;
+            padding-top: 4px;
+        }
+
+        .button {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 14px 32px;
+            border-radius: 8px;
+            text-decoration: none;
+            font-size: 16px;
+            font-weight: 600;
+            margin-top: 30px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #f0f0f0;
+            color: #999;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">
+            <svg viewBox="0 0 52 52">
+                <path d="M14 27l9 9 15-15"/>
+            </svg>
+        </div>
+
+        <h1>Thank You!</h1>
+        <p class="subtitle">Your Medicare information has been successfully submitted.</p>
+
+        <div class="info-box">
+            <h2>What Happens Next?</h2>
+            <p>Your information has been securely saved to our system. Our Medicare eligibility verification team will review your details and prepare for your call.</p>
+        </div>
+
+        <div class="steps">
+            <h3>Next Steps:</h3>
+
+            <div class="step">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <strong>Call us back</strong> at your convenience during business hours to complete your Medicare eligibility screening.
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    Our AI-powered assistant will verify your Medicare eligibility and provide you with your results instantly.
+                </div>
+            </div>
+
+            <div class="step">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    If you qualify, we'll connect you with a specialist to complete your enrollment in our premium eyewear program.
+                </div>
+            </div>
+        </div>
+
+        <div class="phone-number">
+            +1 (505) 542-1045
+        </div>
+
+        <p style="color: #666; font-size: 13px; margin-top: 10px;">
+            Business Hours: Monday - Friday, 9:00 AM - 5:45 PM EST
+        </p>
+
+        <div class="footer">
+            <p>If you have any questions or need assistance, please call the number above.</p>
+            <p style="margin-top: 10px;">Your form link has expired and cannot be reused.</p>
+        </div>
+    </div>
+</body>
+</html>

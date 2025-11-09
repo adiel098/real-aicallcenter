@@ -285,3 +285,61 @@ export const calculateMissingFields = (user: UserData): string[] => {
 export const isUserDataComplete = (user: UserData): boolean => {
   return user.missingFields.length === 0;
 };
+
+/**
+ * Create new user data entry
+ * Initializes with provided Medicare data and calculates missing fields
+ *
+ * @param userData - Partial user data to create
+ * @returns Newly created UserData object
+ */
+export const createUserData = (userData: {
+  phoneNumber: string;
+  name: string;
+  medicareData?: Partial<UserData['medicareData']>;
+}): UserData => {
+  // Generate userId (same as lead ID pattern for consistency)
+  const userId = `user-${String(userDataDatabase.length + 1).padStart(3, '0')}`;
+
+  // Create initial user object
+  const newUser: UserData = {
+    userId,
+    phoneNumber: userData.phoneNumber,
+    name: userData.name,
+    medicareData: {
+      age: userData.medicareData?.age,
+      city: userData.medicareData?.city,
+      medicareNumber: userData.medicareData?.medicareNumber,
+      planLevel: userData.medicareData?.planLevel,
+      hasColorblindness: userData.medicareData?.hasColorblindness,
+      colorblindType: userData.medicareData?.colorblindType,
+      currentEyewear: userData.medicareData?.currentEyewear,
+      medicalHistory: userData.medicareData?.medicalHistory,
+      currentMedications: userData.medicareData?.currentMedications,
+    },
+    eligibilityData: {
+      planEligibilityStatus: 'PENDING',
+      mbiValidated: false,
+    },
+    missingFields: [],
+    lastUpdated: new Date().toISOString(),
+  };
+
+  // Calculate missing fields
+  newUser.missingFields = calculateMissingFields(newUser);
+
+  // Add to database
+  userDataDatabase.push(newUser);
+
+  return newUser;
+};
+
+/**
+ * Check if user exists by phone number
+ *
+ * @param phoneNumber - Phone number to check
+ * @returns true if user exists, false otherwise
+ */
+export const userExists = (phoneNumber: string): boolean => {
+  return findUserDataByPhoneNumber(phoneNumber) !== undefined;
+};
