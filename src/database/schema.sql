@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS call_events (
 -- Tracks all tool/function calls during conversations
 CREATE TABLE IF NOT EXISTS tool_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    call_id TEXT NOT NULL,
+    call_id TEXT, -- Made nullable to allow tracking when call context is missing
     tool_name TEXT NOT NULL,
     arguments TEXT, -- JSON string of tool arguments
     result TEXT, -- JSON string of tool result
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS tool_executions (
     error_message TEXT,
     timestamp DATETIME NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (call_id) REFERENCES calls(call_id) ON DELETE CASCADE
+    FOREIGN KEY (call_id) REFERENCES calls(call_id) ON DELETE SET NULL
 );
 
 -- VICI Dispositions Table
