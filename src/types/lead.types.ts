@@ -14,8 +14,11 @@ export interface Lead {
   /** Unique identifier for the lead */
   leadId: string;
 
-  /** Phone number in E.164 format (e.g., +12025551234) */
+  /** Primary phone number in E.164 format (e.g., +12025551234) */
   phoneNumber: string;
+
+  /** Additional phone numbers associated with this lead (for multi-device recognition) */
+  alternatePhones?: string[];
 
   /** Lead's full name */
   name: string;

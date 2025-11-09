@@ -41,6 +41,10 @@ import { viciService } from '../services/vici.service';
 import { sendFormLinkSMS } from '../services/sms.service';
 import { generateFormToken, buildFormUrl, validateFormToken, useFormToken } from '../services/token.service';
 import axios from 'axios';
+import databaseService from '../services/database.service';
+import errorHandler from '../services/errorHandler.service';
+import performanceService from '../services/performance.service';
+import metricsService from '../services/metrics.service';
 
 // Initialize Express app
 const app = express();
@@ -1313,7 +1317,18 @@ app.post('/api/vapi/tool-calls', async (req: Request, res: Response) => {
 
       // Execute tool handler
       const startTime = Date.now();
-      const result = await handleToolCall(toolName, args, callLogger, callId);
+      let result: string;
+      let success = true;
+      let errorMessage: string | undefined;
+
+      try {
+        result = await handleToolCall(toolName, args, callLogger, callId);
+      } catch (toolError: any) {
+        success = false;
+        errorMessage = toolError.message;
+        result = JSON.stringify({ error: toolError.message });
+      }
+
       const duration = Date.now() - startTime;
 
       callLogger.info(
@@ -1321,9 +1336,26 @@ app.post('/api/vapi/tool-calls', async (req: Request, res: Response) => {
           toolCallId,
           toolName,
           duration,
+          success,
         },
         'Tool call completed'
       );
+
+      // Log tool execution to database
+      try {
+        databaseService.insertToolExecution({
+          call_id: callId,
+          tool_name: toolName,
+          arguments: JSON.stringify(args),
+          result,
+          duration_ms: duration,
+          success,
+          error_message: errorMessage,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (dbError) {
+        callLogger.error({ dbError }, 'Failed to persist tool execution to database');
+      }
 
       results.push({
         toolCallId,
@@ -1391,6 +1423,29 @@ app.post('/api/vapi/events/call-started', (req: Request, res: Response) => {
       '📞 CALL STARTED'
     );
 
+    // Persist call to database
+    try {
+      const callState = callStateService.getCallState(call.id);
+      databaseService.insertCall({
+        call_id: call.id,
+        phone_number: call.customer?.number || call.phoneNumberFrom,
+        call_type: call.type || 'inbound',
+        start_time: call.startedAt || timestamp,
+        agent_extension: callState?.agentExtension,
+        is_business_hours: callState?.isBusinessHours,
+      });
+
+      // Log call started event
+      databaseService.insertCallEvent({
+        call_id: call.id,
+        event_type: 'call-started',
+        event_data: JSON.stringify(event),
+        timestamp: timestamp,
+      });
+    } catch (dbError) {
+      eventLogger.error({ dbError }, 'Failed to persist call start to database');
+    }
+
     res.status(HTTP_STATUS.OK).send();
   } catch (error: any) {
     logger.error({ error: error.message }, 'Error processing call.started event');
@@ -1445,6 +1500,41 @@ app.post('/api/vapi/events/call-ended', (req: Request, res: Response) => {
         },
         'Conversation statistics'
       );
+    }
+
+    // Update call in database
+    try {
+      const callState = callStateService.getCallState(call.id);
+
+      // Build transcript from messages
+      let transcript = '';
+      if (messages && messages.length > 0) {
+        transcript = messages
+          .map((m) => `${m.role.toUpperCase()}: ${m.content}`)
+          .join('\n\n');
+      }
+
+      databaseService.updateCall(call.id, {
+        end_time: call.endedAt || timestamp,
+        duration_seconds: call.duration,
+        status: callState?.detectedStatus || call.status,
+        end_reason: call.endReason,
+        transcript,
+        summary,
+        recording_url: call.recordingUrl,
+        total_cost: call.cost,
+        message_count: messages?.length || 0,
+      });
+
+      // Log call ended event
+      databaseService.insertCallEvent({
+        call_id: call.id,
+        event_type: 'call-ended',
+        event_data: JSON.stringify(event),
+        timestamp: timestamp,
+      });
+    } catch (dbError) {
+      eventLogger.error({ dbError }, 'Failed to update call in database');
     }
 
     res.status(HTTP_STATUS.OK).send();

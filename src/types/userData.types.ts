@@ -66,8 +66,11 @@ export interface UserData {
   /** Unique user identifier (can match leadId) */
   userId: string;
 
-  /** Phone number in E.164 format */
+  /** Primary phone number in E.164 format (used for initial registration) */
   phoneNumber: string;
+
+  /** Additional phone numbers associated with this user (for multi-device recognition) */
+  alternatePhones?: string[];
 
   /** User's full name */
   name: string;

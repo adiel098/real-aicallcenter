@@ -20,6 +20,9 @@ import {
   VICIDisposition,
   AgentPhone,
 } from '../types/vici.types';
+import databaseService from './database.service';
+import errorHandler from './errorHandler.service';
+import performanceService from './performance.service';
 
 class ViciService {
   private client: AxiosInstance;
@@ -85,6 +88,7 @@ class ViciService {
       classificationResult?: 'QUALIFIED' | 'NOT_QUALIFIED';
       mbiValidated?: boolean;
       reason?: string;
+      callId?: string;
     } = {}
   ): Promise<VICIDispositionResponse> {
     const payload: VICIDispositionRequest = {
@@ -109,23 +113,64 @@ class ViciService {
         phoneNumber,
         disposition,
         classificationResult: metadata.classificationResult,
+        callId: metadata.callId,
       },
       'Sending disposition to VICI'
     );
 
+    // Track performance
+    const perfTracker = performanceService.trackApiCall('/dispositions', 'POST', metadata.callId);
+
     try {
-      const response = await this.callWithRetry(() =>
-        this.client.post<VICIDispositionResponse>('/dispositions', payload)
+      // Execute with error handler retry logic
+      const response = await errorHandler.executeWithRetry(
+        async () => {
+          const res = await this.client.post<VICIDispositionResponse>('/dispositions', payload);
+          return res;
+        },
+        'vici',
+        {
+          callId: metadata.callId,
+          phoneNumber,
+          tool: 'sendDisposition',
+          endpoint: '/dispositions',
+          arguments: { disposition, ...metadata },
+        }
       );
 
+      perfTracker.end(true, response.status);
+
       logger.info(
-        { dispositionId: response.data.dispositionId, leadId: payload.leadId },
+        { dispositionId: response.data.dispositionId, leadId: payload.leadId, callId: metadata.callId },
         'Disposition sent successfully to VICI'
       );
 
+      // Persist to database
+      try {
+        databaseService.insertDisposition({
+          disposition_id: response.data.dispositionId,
+          call_id: metadata.callId,
+          lead_id: metadata.leadId,
+          phone_number: phoneNumber,
+          disposition_code: disposition,
+          campaign_id: metadata.campaignId || this.defaultCampaignId,
+          agent_id: metadata.agentId || this.defaultAgentId,
+          duration_seconds: metadata.callDuration,
+          eligibility_score: metadata.eligibilityScore,
+          classification_result: metadata.classificationResult,
+          mbi_validated: metadata.mbiValidated,
+          notes: metadata.reason,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (dbError) {
+        logger.error({ dbError }, 'Failed to persist disposition to database');
+      }
+
       return response.data;
     } catch (error: any) {
-      logger.error({ error, payload }, 'Failed to send disposition to VICI');
+      perfTracker.end(false, error.response?.status);
+
+      // Error already logged by error handler
       throw new Error(`VICI disposition failed: ${error.message}`);
     }
   }
@@ -153,6 +198,7 @@ class ViciService {
       campaignId?: string;
       agentId?: AgentPhone;
       notes?: string;
+      callId?: string;
     } = {}
   ): Promise<VICICallbackResponse> {
     const payload: VICICallbackRequest = {
@@ -171,23 +217,60 @@ class ViciService {
         phoneNumber,
         callbackDateTime,
         reason,
+        callId: metadata.callId,
       },
       'Scheduling callback in VICI'
     );
 
+    // Track performance
+    const perfTracker = performanceService.trackApiCall('/callbacks', 'POST', metadata.callId);
+
     try {
-      const response = await this.callWithRetry(() =>
-        this.client.post<VICICallbackResponse>('/callbacks', payload)
+      // Execute with error handler retry logic
+      const response = await errorHandler.executeWithRetry(
+        async () => {
+          const res = await this.client.post<VICICallbackResponse>('/callbacks', payload);
+          return res;
+        },
+        'vici',
+        {
+          callId: metadata.callId,
+          phoneNumber,
+          tool: 'scheduleCallback',
+          endpoint: '/callbacks',
+          arguments: { callbackDateTime, reason, ...metadata },
+        }
       );
 
+      perfTracker.end(true, response.status);
+
       logger.info(
-        { callbackId: response.data.callbackId, scheduledFor: response.data.scheduledFor },
+        { callbackId: response.data.callbackId, scheduledFor: response.data.scheduledFor, callId: metadata.callId },
         'Callback scheduled successfully in VICI'
       );
 
+      // Persist to database
+      try {
+        databaseService.insertCallback({
+          callback_id: response.data.callbackId,
+          call_id: metadata.callId,
+          lead_id: metadata.leadId,
+          phone_number: phoneNumber,
+          callback_datetime: callbackDateTime,
+          agent_id: metadata.agentId || this.defaultAgentId,
+          reason,
+          notes: metadata.notes,
+          status: 'PENDING',
+        });
+      } catch (dbError) {
+        logger.error({ dbError }, 'Failed to persist callback to database');
+      }
+
       return response.data;
     } catch (error: any) {
-      logger.error({ error, payload }, 'Failed to schedule callback in VICI');
+      perfTracker.end(false, error.response?.status);
+
+      // Error already logged by error handler
       throw new Error(`VICI callback scheduling failed: ${error.message}`);
     }
   }

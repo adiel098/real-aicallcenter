@@ -15,6 +15,7 @@ export const leadsDatabase: Lead[] = [
   {
     leadId: 'lead-001',
     phoneNumber: '+972527373474',
+    alternatePhones: ['+972501234001'], // Can also be reached at this number
     name: 'John Smith',
     email: 'john.smith@example.com',
     city: 'Washington',
@@ -96,13 +97,24 @@ export const leadsDatabase: Lead[] = [
 
 /**
  * Helper function to find a lead by phone number
+ * Searches both primary phone and alternate phones
  * Reusable across the application
  *
  * @param phoneNumber - Phone number in E.164 format
  * @returns Lead if found, undefined otherwise
  */
 export const findLeadByPhoneNumber = (phoneNumber: string): Lead | undefined => {
-  return leadsDatabase.find((lead) => lead.phoneNumber === phoneNumber);
+  return leadsDatabase.find((lead) => {
+    // Check primary phone number
+    if (lead.phoneNumber === phoneNumber) {
+      return true;
+    }
+    // Check alternate phones if they exist
+    if (lead.alternatePhones && lead.alternatePhones.includes(phoneNumber)) {
+      return true;
+    }
+    return false;
+  });
 };
 
 /**

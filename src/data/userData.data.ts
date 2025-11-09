@@ -15,6 +15,7 @@ export const userDataDatabase: UserData[] = [
   {
     userId: 'lead-001', // John Smith - Complete data, QUALIFIED
     phoneNumber: '+972501234001',
+    alternatePhones: ['+972527373474'], // Can also be reached at this number
     name: 'John Smith',
     medicareData: {
       age: 68,
