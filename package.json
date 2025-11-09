@@ -12,6 +12,7 @@
     "dev:servers": "concurrently \"npm run dev:lead-crm\" \"npm run dev:userdata-crm\" \"npm run dev:classification-crm\" \"npm run dev:vici\" \"npm run dev:vapi-handler\"",
     "dev:all": "npm run setup:webhooks && npm run dev:servers",
     "setup:webhooks": "ts-node scripts/setup-vapi-webhooks.ts",
+    "setup:tools": "ts-node scripts/setup-vapi-tools.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"

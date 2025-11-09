@@ -1490,6 +1490,15 @@ const handleToolCall = async (toolName: string, args: any, callLogger: any, call
  * VAPI sends tool call requests to this endpoint
  */
 app.post('/api/vapi/tool-calls', async (req: Request, res: Response) => {
+  // DEBUG: Log full request body to diagnose "callId: unknown" issue
+  logger.debug({
+    requestBody: JSON.stringify(req.body, null, 2),
+    hasCall: !!req.body.call,
+    callKeys: req.body.call ? Object.keys(req.body.call) : [],
+    hasMessage: !!req.body.message,
+    messageKeys: req.body.message ? Object.keys(req.body.message) : [],
+  }, 'DEBUG: Full VAPI tool call request structure');
+
   // Extract call ID and phone number for logging context
   const callId = req.body.call?.id || 'unknown';
   const customerNumber = req.body.call?.customer?.number || req.body.call?.phoneNumberFrom || 'unknown';
