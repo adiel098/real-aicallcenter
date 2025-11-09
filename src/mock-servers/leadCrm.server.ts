@@ -245,7 +245,10 @@ app.post('/api/leads', (req: Request, res: Response) => {
   const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
   // Check if lead already exists
-  if (leadExists(normalizedPhone)) {
+  if (databaseService.leadExists(normalizedPhone)) {
+    const existingRecord = databaseService.getLeadByPhone(normalizedPhone);
+    const existingLead = existingRecord ? convertLeadRecordToLead(existingRecord) : null;
+
     requestLogger.warn(
       { phoneNumber: maskPhoneNumber(normalizedPhone) },
       'Lead already exists with this phone number'
@@ -253,19 +256,31 @@ app.post('/api/leads', (req: Request, res: Response) => {
     return res.status(HTTP_STATUS.CONFLICT).json({
       success: false,
       message: 'A lead with this phone number already exists',
-      existingLead: findLeadByPhoneNumber(normalizedPhone),
+      existingLead: existingLead,
     });
   }
 
   // Create new lead
   try {
-    const newLead = createLead({
-      phoneNumber: normalizedPhone,
+    // Generate unique leadId by counting existing leads
+    const allLeads = databaseService.getAllLeads(1000, 0);
+    const leadId = `lead-${String(allLeads.length + 1).padStart(3, '0')}`;
+
+    const leadRecord: LeadRecord = {
+      lead_id: leadId,
+      phone_number: normalizedPhone,
       name,
       email,
       city,
-      source,
-      notes,
+      source: source || 'inbound_call',
+      notes: notes || '',
+    };
+
+    databaseService.insertLead(leadRecord);
+
+    const newLead = convertLeadRecordToLead({
+      ...leadRecord,
+      created_at: new Date().toISOString(),
     });
 
     requestLogger.info(
@@ -325,14 +340,19 @@ app.use((err: Error, _req: Request, res: Response, _next: any) => {
  * Start the server
  */
 const startServer = () => {
+  // Migrate in-memory leads to database on startup
+  migrateLeadsToDatabase();
+
   app.listen(PORTS.LEAD_CRM, () => {
+    const leadsCount = databaseService.getAllLeads(1000, 0).length;
+
     logger.info(
       {
         port: PORTS.LEAD_CRM,
         service: 'lead-crm',
-        leadsCount: leadsDatabase.length,
+        leadsCount: leadsCount,
       },
-      `Lead CRM Server started on port ${PORTS.LEAD_CRM}`
+      `Lead CRM Server started on port ${PORTS.LEAD_CRM} with ${leadsCount} leads in database`
     );
   });
 };

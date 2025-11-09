@@ -181,12 +181,18 @@ class DatabaseService {
     if (lead) return lead;
 
     // Search by alternate phones (JSON array contains the phone number)
+    // Only search if alternate_phones column has actual data
     stmt = this.db.prepare(`
       SELECT * FROM leads
       WHERE alternate_phones IS NOT NULL
-      AND alternate_phones LIKE ?
+      AND alternate_phones != ''
+      AND alternate_phones != 'null'
+      AND (
+        alternate_phones LIKE ?
+        OR alternate_phones LIKE ?
+      )
     `);
-    lead = stmt.get(`%"${phoneNumber}"%`) as LeadRecord | null;
+    lead = stmt.get(`%"${phoneNumber}"%`, `%'${phoneNumber}'%`) as LeadRecord | null;
 
     return lead;
   }
@@ -255,7 +261,8 @@ class DatabaseService {
   }
 
   leadExists(phoneNumber: string): boolean {
-    return this.getLeadByPhone(phoneNumber) !== null;
+    const lead = this.getLeadByPhone(phoneNumber);
+    return lead !== null && lead !== undefined;
   }
 
   // ============= CALL RECORDS =============

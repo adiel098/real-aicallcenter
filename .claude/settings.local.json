@@ -38,7 +38,17 @@
       "Bash(cmd //c \"timeout /t 5 /nobreak\")",
       "Bash(cmd //c \"for /f %a in (''netstat -ano ^| findstr /r \"\"300[0-4]\"\" ^| findstr LISTENING'') do @echo %a\")",
       "Bash(cmd //c \"for /f \"\"tokens=5\"\" %a in (''netstat -ano ^| findstr /r \"\":300[0-4]\"\"'') do taskkill /F /PID %a\")",
-      "Bash(cmd //c \"taskkill /F /PID 40772 /PID 4292 /PID 33876 /PID 25424 /PID 32728\")"
+      "Bash(cmd //c \"taskkill /F /PID 40772 /PID 4292 /PID 33876 /PID 25424 /PID 32728\")",
+      "Bash(timeout /t 8 /nobreak)",
+      "Bash(cmd /c \"for /f \"\"tokens=5\"\" %a in (''netstat -ano ^| findstr /r \"\":300[0-4]\"\"'') do taskkill /F /PID %a\")",
+      "Bash(cmd /c \"taskkill /F /IM node.exe\")",
+      "Bash(cmd /c \"timeout /t 3 /nobreak\")",
+      "Bash(npm run dev:lead-crm:*)",
+      "Bash(cmd /c \"timeout /t 5 /nobreak\")",
+      "Bash(cmd /c \"taskkill /F /PID 9788\")",
+      "Bash(npx kill-port:*)",
+      "Bash(del monitoring.db)",
+      "Bash(cmd /c \"timeout /t 8 /nobreak\")"
     ],
     "deny": [],
     "ask": []
