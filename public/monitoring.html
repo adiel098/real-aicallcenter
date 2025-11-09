@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAPI & VICI Monitoring Dashboard - Medicare Eligibility Screening</title>
+    <link rel="stylesheet" href="css/monitoring.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 VAPI & VICI Monitoring Dashboard</h1>
+            <div class="header-controls">
+                <div class="time-filter">
+                    <label for="timeRange">Time Range:</label>
+                    <select id="timeRange">
+                        <option value="1">Last Hour</option>
+                        <option value="6">Last 6 Hours</option>
+                        <option value="24" selected>Last 24 Hours</option>
+                        <option value="72">Last 3 Days</option>
+                        <option value="168">Last Week</option>
+                    </select>
+                </div>
+                <div class="refresh-indicator">
+                    <span id="lastUpdated">Last updated: --:--:--</span>
+                    <button id="refreshBtn" class="refresh-btn">🔄 Refresh</button>
+                </div>
+                <a href="/" class="back-link">← Back to CRM Dashboard</a>
+            </div>
+        </header>
+
+        <!-- System Health Banner -->
+        <div id="healthBanner" class="health-banner">
+            <div class="health-status">
+                <span id="healthIcon">⏳</span>
+                <span id="healthText">Checking system health...</span>
+            </div>
+            <div id="healthMetrics" class="health-metrics"></div>
+        </div>
+
+        <!-- Real-time Stats Cards -->
+        <section class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">📞</div>
+                <div class="stat-content">
+                    <h3>Active Calls</h3>
+                    <div class="stat-value" id="activeCalls">--</div>
+                    <div class="stat-label">Currently in progress</div>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">📊</div>
+                <div class="stat-content">
+                    <h3>Total Calls</h3>
+                    <div class="stat-value" id="totalCalls">--</div>
+                    <div class="stat-label"><span id="completedCalls">--</span> completed</div>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">⏱️</div>
+                <div class="stat-content">
+                    <h3>Avg Duration</h3>
+                    <div class="stat-value" id="avgDuration">--</div>
+                    <div class="stat-label">seconds per call</div>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">💰</div>
+                <div class="stat-content">
+                    <h3>Total Cost</h3>
+                    <div class="stat-value" id="totalCost">--</div>
+                    <div class="stat-label">API usage cost</div>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">✅</div>
+                <div class="stat-content">
+                    <h3>Conversion Rate</h3>
+                    <div class="stat-value" id="conversionRate">--%</div>
+                    <div class="stat-label">QUALIFIED / total</div>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon">⚡</div>
+                <div class="stat-content">
+                    <h3>Calls/Minute</h3>
+                    <div class="stat-value" id="callsPerMinute">--</div>
+                    <div class="stat-label">Last 5 minutes</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab-btn active" data-tab="live-monitor">🔴 Live Monitor</button>
+            <button class="tab-btn" data-tab="vapi-stats">📊 VAPI Stats</button>
+            <button class="tab-btn" data-tab="vici-stats">🎯 VICI Stats</button>
+            <button class="tab-btn" data-tab="performance">⚡ Performance</button>
+            <button class="tab-btn" data-tab="errors">⚠️ Errors</button>
+            <button class="tab-btn" data-tab="call-history">📜 Call History</button>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="tab-content active" id="live-monitor">
+            <h2>🔴 Live Call Monitor</h2>
+            <div id="activeCallsList" class="active-calls-list">
+                <div class="empty-state">No active calls at the moment</div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="vapi-stats">
+            <h2>📊 VAPI Call Statistics</h2>
+
+            <div class="stats-section">
+                <h3>Call Status Distribution</h3>
+                <div class="status-grid" id="callStatusGrid">
+                    <div class="status-item">
+                        <div class="status-label">Live Person</div>
+                        <div class="status-value" id="livePersonCount">--</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Voicemail</div>
+                        <div class="status-value" id="voicemailCount">--</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Dead Air</div>
+                        <div class="status-value" id="deadAirCount">--</div>
+                    </div>
+                    <div class="status-item">
+                        <div class="status-label">Other</div>
+                        <div class="status-value" id="otherStatusCount">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stats-section">
+                <h3>Tool Execution Statistics</h3>
+                <div class="table-container">
+                    <table id="toolStatsTable">
+                        <thead>
+                            <tr>
+                                <th>Tool Name</th>
+                                <th>Total Executions</th>
+                                <th>Success Rate</th>
+                                <th>Avg Duration</th>
+                                <th>Max Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody id="toolStatsBody">
+                            <tr><td colspan="5">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="stats-section">
+                <h3>Calls per Hour</h3>
+                <div id="callsChartContainer" class="chart-container">
+                    <canvas id="callsChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="vici-stats">
+            <h2>🎯 VICI Dialer Statistics</h2>
+
+            <div class="stats-section">
+                <h3>Disposition Breakdown</h3>
+                <div class="table-container">
+                    <table id="dispositionStatsTable">
+                        <thead>
+                            <tr>
+                                <th>Disposition Code</th>
+                                <th>Count</th>
+                                <th>Avg Duration (s)</th>
+                                <th>Avg Score</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dispositionStatsBody">
+                            <tr><td colspan="5">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="stats-section">
+                <h3>Agent Performance</h3>
+                <div class="table-container">
+                    <table id="agentStatsTable">
+                        <thead>
+                            <tr>
+                                <th>Agent ID</th>
+                                <th>Total Calls</th>
+                                <th>Sales (SALE)</th>
+                                <th>Conversion Rate</th>
+                                <th>Avg Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody id="agentStatsBody">
+                            <tr><td colspan="5">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="stats-section">
+                <h3>Pending Callbacks</h3>
+                <div class="stat-highlight" id="pendingCallbacksCount">--</div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="performance">
+            <h2>⚡ Performance Metrics</h2>
+
+            <div class="stats-section">
+                <h3>API Performance</h3>
+                <div class="table-container">
+                    <table id="perfStatsTable">
+                        <thead>
+                            <tr>
+                                <th>Metric Type</th>
+                                <th>Total Requests</th>
+                                <th>Avg Latency (ms)</th>
+                                <th>Min / Max (ms)</th>
+                                <th>P95 Latency (ms)</th>
+                                <th>Success Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody id="perfStatsBody">
+                            <tr><td colspan="6">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="stats-section">
+                <h3>Slow Operations (>5s)</h3>
+                <div class="table-container">
+                    <table id="slowOpsTable">
+                        <thead>
+                            <tr>
+                                <th>Call ID</th>
+                                <th>Operation</th>
+                                <th>Duration (ms)</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="slowOpsBody">
+                            <tr><td colspan="4">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="errors">
+            <h2>⚠️ Error Tracking</h2>
+
+            <div class="stats-section">
+                <h3>Error Summary</h3>
+                <div class="error-summary">
+                    <div class="error-stat">
+                        <div class="error-stat-label">Total Errors</div>
+                        <div class="error-stat-value" id="totalErrors">--</div>
+                    </div>
+                    <div class="error-stat">
+                        <div class="error-stat-label">Error Rate</div>
+                        <div class="error-stat-value" id="errorRate">--%</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="stats-section">
+                <h3>Errors by Category</h3>
+                <div class="table-container">
+                    <table id="errorCategoryTable">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Type</th>
+                                <th>Count</th>
+                                <th>Retry Success Rate</th>
+                                <th>Critical Count</th>
+                            </tr>
+                        </thead>
+                        <tbody id="errorCategoryBody">
+                            <tr><td colspan="5">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="stats-section">
+                <h3>Recent Errors (Last 20)</h3>
+                <div class="table-container">
+                    <table id="recentErrorsTable">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Category</th>
+                                <th>Severity</th>
+                                <th>Message</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentErrorsBody">
+                            <tr><td colspan="5">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-content" id="call-history">
+            <h2>📜 Call History</h2>
+
+            <div class="stats-section">
+                <div class="table-container">
+                    <table id="callHistoryTable">
+                        <thead>
+                            <tr>
+                                <th>Call ID</th>
+                                <th>Phone Number</th>
+                                <th>Start Time</th>
+                                <th>Duration</th>
+                                <th>Status</th>
+                                <th>End Reason</th>
+                                <th>Cost</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="callHistoryBody">
+                            <tr><td colspan="8">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination">
+                    <button id="prevPage" disabled>← Previous</button>
+                    <span id="pageInfo">Page 1</span>
+                    <button id="nextPage">Next →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Call Details Modal -->
+    <div id="callDetailsModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>Call Details</h2>
+            <div id="callDetailsContent">Loading...</div>
+        </div>
+    </div>
+
+    <script src="js/monitoring.js"></script>
+</body>
+</html>

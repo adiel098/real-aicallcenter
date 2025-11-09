@@ -33,7 +33,8 @@
       "Bash(cmd //c \"taskkill /F /IM node.exe\")",
       "Bash(timeout /t 2 /nobreak)",
       "Bash(coverage:*)",
-      "Bash(npx ts-node:*)"
+      "Bash(npx ts-node:*)",
+      "Bash(timeout /t 10 /nobreak)"
     ],
     "deny": [],
     "ask": []

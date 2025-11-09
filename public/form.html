@@ -240,8 +240,8 @@
 
             <div class="form-group">
                 <label for="phoneNumber">Phone Number <span class="required">*</span></label>
-                <input type="text" id="phoneNumber" name="phoneNumber" readonly required>
-                <small>This field is pre-filled and cannot be changed</small>
+                <input type="text" id="phoneNumber" name="phoneNumber" placeholder="e.g., +1-555-123-4567" required>
+                <small>Please enter your phone number in international format (e.g., +972-XX-XXX-XXXX)</small>
             </div>
 
             <div class="form-group">
@@ -368,20 +368,6 @@
             // Get URL parameters
             const urlParams = new URLSearchParams(window.location.search);
             const token = urlParams.get('token');
-            const phone = urlParams.get('phone');
-
-            // Pre-fill phone number (URLSearchParams automatically decodes %2B to +)
-            if (phone) {
-                const phoneField = document.getElementById('phoneNumber');
-                if (phoneField) {
-                    phoneField.value = decodeURIComponent(phone);
-                    console.log('Phone number pre-filled:', phone);
-                } else {
-                    console.error('Phone number field not found');
-                }
-            } else {
-                console.error('No phone parameter in URL');
-            }
 
         // Show/hide colorblind type field based on colorblindness selection
         const colorblindnessRadios = document.querySelectorAll('input[name="hasColorblindness"]');

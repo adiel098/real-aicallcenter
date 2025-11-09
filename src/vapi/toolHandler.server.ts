@@ -1135,8 +1135,8 @@ const handleSendFormLinkSMS = async (
     // Generate secure form token
     const formToken = generateFormToken(args.phoneNumber);
 
-    // Build form URL with token and phone number
-    const formUrl = buildFormUrl(ngrokUrl, formToken.token, args.phoneNumber);
+    // Build form URL with token
+    const formUrl = buildFormUrl(ngrokUrl, formToken.token);
 
     callLogger.info(
       {
@@ -1180,18 +1180,138 @@ const handleSendFormLinkSMS = async (
 };
 
 /**
+ * Handle find_user_by_medicare_number tool call
+ * Searches for existing user by their Medicare number (MBI)
+ * Used when caller calls from unrecognized phone number
+ */
+const handleFindUserByMedicareNumber = async (
+  args: import('../types/vapi.types').FindUserByMedicareNumberArgs,
+  callLogger: any
+): Promise<string> => {
+  const { medicareNumber } = args;
+
+  callLogger.info({ medicareNumber }, 'Finding user by Medicare number');
+
+  try {
+    // Call User Data CRM to search by Medicare number
+    const response = await fetch(
+      `http://localhost:${PORTS.USERDATA_CRM}/api/users/search/by-medicare?mbi=${encodeURIComponent(medicareNumber)}`
+    );
+
+    const result = await response.json();
+
+    if (result.found && result.userData) {
+      callLogger.info(
+        {
+          medicareNumber,
+          userId: result.userData.userId,
+          name: result.userData.name,
+          primaryPhone: result.userData.phoneNumber,
+        },
+        'User found by Medicare number'
+      );
+
+      return JSON.stringify({
+        found: true,
+        userId: result.userData.userId,
+        name: result.userData.name,
+        phoneNumber: result.userData.phoneNumber,
+        city: result.userData.medicareData.city,
+        message: `I found your account! You're registered as ${result.userData.name} in ${result.userData.medicareData.city}. Is that correct?`,
+      });
+    } else {
+      callLogger.info({ medicareNumber }, 'User not found by Medicare number');
+
+      return JSON.stringify({
+        found: false,
+        message: `I couldn't find an account with that Medicare number. You may need to complete our registration form. Would you like me to send you a text message with a link to register?`,
+      });
+    }
+  } catch (error: any) {
+    callLogger.error({ error: error.message, medicareNumber }, 'Error finding user by Medicare number');
+
+    return JSON.stringify({
+      found: false,
+      error: error.message,
+      message: `I'm having trouble looking up your Medicare number right now. Let me try another way to find your account.`,
+    });
+  }
+};
+
+/**
+ * Handle find_user_by_name_dob tool call
+ * Searches for existing user by name and date of birth
+ * Fallback method when Medicare number isn't available
+ */
+const handleFindUserByNameDOB = async (
+  args: import('../types/vapi.types').FindUserByNameDOBArgs,
+  callLogger: any
+): Promise<string> => {
+  const { name, dateOfBirth } = args;
+
+  callLogger.info({ name, dateOfBirth }, 'Finding user by name and DOB');
+
+  try {
+    // Call User Data CRM to search by name and DOB
+    const response = await fetch(
+      `http://localhost:${PORTS.USERDATA_CRM}/api/users/search/by-name-dob?name=${encodeURIComponent(name)}&dob=${encodeURIComponent(dateOfBirth)}`
+    );
+
+    const result = await response.json();
+
+    if (result.found && result.userData) {
+      callLogger.info(
+        {
+          name,
+          dateOfBirth,
+          userId: result.userData.userId,
+          primaryPhone: result.userData.phoneNumber,
+        },
+        'User found by name and DOB'
+      );
+
+      return JSON.stringify({
+        found: true,
+        userId: result.userData.userId,
+        name: result.userData.name,
+        phoneNumber: result.userData.phoneNumber,
+        city: result.userData.medicareData.city,
+        message: `I found your account! You're registered in ${result.userData.medicareData.city}. For security, can you confirm your city?`,
+      });
+    } else {
+      callLogger.info({ name, dateOfBirth }, 'User not found by name and DOB');
+
+      return JSON.stringify({
+        found: false,
+        message: `I couldn't find an account with that name and date of birth. You may be a new user. Would you like me to send you a text message with a link to complete our registration form?`,
+      });
+    }
+  } catch (error: any) {
+    callLogger.error({ error: error.message, name, dateOfBirth }, 'Error finding user by name and DOB');
+
+    return JSON.stringify({
+      found: false,
+      error: error.message,
+      message: `I'm having trouble looking up your information right now. Let me send you our registration form via text message instead.`,
+    });
+  }
+};
+
+/**
  * Main tool call router
  * Routes incoming tool calls to the appropriate handler function
  *
- * Available tools (8 total):
- * - check_lead: Find caller in system
+ * Available tools (10 total):
+ * - check_lead: Find caller in system (searches primary + alternate phones)
  * - get_user_data: Get Medicare data and missing fields
  * - update_user_data: Collect Medicare info from conversation
  * - validate_medicare_eligibility: SSN → MBI → Insurance validation
  * - classify_and_save_user: Classify eligibility + Save + Send VICI disposition (all-in-one)
  * - schedule_callback: Schedule callback through VICI
  * - transfer_call: Transfer to human agent extension 2002
- * - send_form_link_sms: Send SMS with data collection form link (NEW)
+ * - send_form_link_sms: Send SMS with data collection form link
+ * - find_user_by_medicare_number: Find existing user by Medicare number (NEW)
+ * - find_user_by_name_dob: Find existing user by name and DOB (NEW)
  */
 const handleToolCall = async (toolName: string, args: any, callLogger: any, callId: string): Promise<string> => {
   callLogger.debug({ toolName, args }, 'Routing tool call');
@@ -1221,6 +1341,18 @@ const handleToolCall = async (toolName: string, args: any, callLogger: any, call
 
       case 'send_form_link_sms':
         return await handleSendFormLinkSMS(args as SendFormLinkSMSArgs, callLogger);
+
+      case 'find_user_by_medicare_number':
+        return await handleFindUserByMedicareNumber(
+          args as import('../types/vapi.types').FindUserByMedicareNumberArgs,
+          callLogger
+        );
+
+      case 'find_user_by_name_dob':
+        return await handleFindUserByNameDOB(
+          args as import('../types/vapi.types').FindUserByNameDOBArgs,
+          callLogger
+        );
 
       // Legacy tools - removed for simplified workflow
       // classify_user and save_classification_result have been replaced by classify_and_save_user
@@ -1839,13 +1971,45 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         required: ['phoneNumber'],
       },
     },
+    {
+      name: 'find_user_by_medicare_number',
+      description: 'Find existing user account by Medicare number (MBI). Use when caller calls from unrecognized phone number but claims to have an account. Ask caller for their Medicare number, then use this tool to locate their account.',
+      parameters: {
+        type: 'object',
+        properties: {
+          medicareNumber: {
+            type: 'string',
+            description: 'Medicare Beneficiary Identifier in format 1AB2-CD3-EF45',
+          },
+        },
+        required: ['medicareNumber'],
+      },
+    },
+    {
+      name: 'find_user_by_name_dob',
+      description: 'Find existing user account by name and date of birth. Use as fallback when caller does not have Medicare number available. Ask for full name and date of birth, then use this tool to locate their account.',
+      parameters: {
+        type: 'object',
+        properties: {
+          name: {
+            type: 'string',
+            description: 'Full name of the user',
+          },
+          dateOfBirth: {
+            type: 'string',
+            description: 'Date of birth in YYYY-MM-DD format',
+          },
+        },
+        required: ['name', 'dateOfBirth'],
+      },
+    },
   ];
 
   res.status(HTTP_STATUS.OK).json({
     tools,
     serverUrl: `http://localhost:${PORTS.VAPI_HANDLER}/api/vapi/tool-calls`,
-    note: 'COMPLETE 7-TOOL WORKFLOW: check_lead → get_user_data → update_user_data → validate_medicare_eligibility → classify_and_save_user → [schedule_callback OR transfer_call]. Copy these tool definitions to your VAPI dashboard. Update serverUrl if using ngrok or deployed URL.',
-    totalTools: 7,
+    note: 'COMPLETE 10-TOOL WORKFLOW: check_lead → [if found: get_user_data] → [if not found but existing user: find_user_by_medicare_number OR find_user_by_name_dob] → [if new user: send_form_link_sms] → update_user_data → validate_medicare_eligibility → classify_and_save_user → [schedule_callback OR transfer_call]. Copy these tool definitions to your VAPI dashboard. Update serverUrl if using ngrok or deployed URL.',
+    totalTools: 10,
     workflow: {
       standard: 'check_lead → get_user_data → update_user_data → validate_medicare_eligibility → classify_and_save_user',
       onValidationFailure: 'After 3 failed Medicare validations → schedule_callback',
@@ -1992,6 +2156,154 @@ app.post('/api/form-submission', async (req: Request, res: Response) => {
       message: 'An error occurred while processing your submission. Please try again or call us directly.',
       error: error.message,
     });
+  }
+});
+
+/**
+ * Monitoring and Metrics API Endpoints
+ */
+
+// GET /api/metrics/dashboard - Comprehensive dashboard metrics
+app.get('/api/metrics/dashboard', (_req: Request, res: Response) => {
+  try {
+    const hours = parseInt(_req.query.hours as string) || 24;
+    const metrics = metricsService.getDashboardMetrics(hours);
+    res.status(HTTP_STATUS.OK).json(metrics);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get dashboard metrics');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get metrics' });
+  }
+});
+
+// GET /api/metrics/calls - Call volume and statistics
+app.get('/api/metrics/calls', (_req: Request, res: Response) => {
+  try {
+    const hours = parseInt(_req.query.hours as string) || 24;
+    const callMetrics = metricsService.getCallMetrics(hours);
+    res.status(HTTP_STATUS.OK).json(callMetrics);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get call metrics');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get call metrics' });
+  }
+});
+
+// GET /api/metrics/vici - VICI disposition statistics
+app.get('/api/metrics/vici', (_req: Request, res: Response) => {
+  try {
+    const hours = parseInt(_req.query.hours as string) || 24;
+    const viciMetrics = metricsService.getVICIMetrics(hours);
+    res.status(HTTP_STATUS.OK).json(viciMetrics);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get VICI metrics');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get VICI metrics' });
+  }
+});
+
+// GET /api/metrics/tools - Tool execution statistics
+app.get('/api/metrics/tools', (_req: Request, res: Response) => {
+  try {
+    const hours = parseInt(_req.query.hours as string) || 24;
+    const toolMetrics = metricsService.getToolMetrics(hours);
+    res.status(HTTP_STATUS.OK).json(toolMetrics);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get tool metrics');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get tool metrics' });
+  }
+});
+
+// GET /api/metrics/performance - Performance and latency statistics
+app.get('/api/metrics/performance', (_req: Request, res: Response) => {
+  try {
+    const hours = parseInt(_req.query.hours as string) || 24;
+    const perfMetrics = metricsService.getPerformanceMetrics(hours);
+    res.status(HTTP_STATUS.OK).json(perfMetrics);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get performance metrics');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get performance metrics' });
+  }
+});
+
+// GET /api/metrics/errors - Error statistics and recent errors
+app.get('/api/metrics/errors', (_req: Request, res: Response) => {
+  try {
+    const hours = parseInt(_req.query.hours as string) || 24;
+    const errorMetrics = metricsService.getErrorMetrics(hours);
+    res.status(HTTP_STATUS.OK).json(errorMetrics);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get error metrics');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get error metrics' });
+  }
+});
+
+// GET /api/metrics/realtime - Real-time metrics (active calls, system health)
+app.get('/api/metrics/realtime', (_req: Request, res: Response) => {
+  try {
+    const realtimeMetrics = metricsService.getRealtimeMetrics();
+    res.status(HTTP_STATUS.OK).json(realtimeMetrics);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get realtime metrics');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get realtime metrics' });
+  }
+});
+
+// GET /api/calls/history - Paginated call history
+app.get('/api/calls/history', (_req: Request, res: Response) => {
+  try {
+    const limit = parseInt(_req.query.limit as string) || 100;
+    const offset = parseInt(_req.query.offset as string) || 0;
+    const calls = databaseService.getAllCalls(limit, offset);
+    res.status(HTTP_STATUS.OK).json({ calls, limit, offset });
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get call history');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get call history' });
+  }
+});
+
+// GET /api/calls/:callId - Detailed call information
+app.get('/api/calls/:callId', (_req: Request, res: Response) => {
+  try {
+    const { callId } = _req.params;
+    const call = databaseService.getCall(callId);
+
+    if (!call) {
+      return res.status(HTTP_STATUS.NOT_FOUND).json({ error: 'Call not found' });
+    }
+
+    const events = databaseService.getCallEvents(callId);
+    const toolExecutions = databaseService.getToolExecutions(callId);
+
+    res.status(HTTP_STATUS.OK).json({
+      call,
+      events,
+      toolExecutions,
+    });
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get call details');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get call details' });
+  }
+});
+
+// GET /api/errors - Error logs with optional filtering
+app.get('/api/errors', (_req: Request, res: Response) => {
+  try {
+    const category = _req.query.category as string | undefined;
+    const limit = parseInt(_req.query.limit as string) || 100;
+    const errors = databaseService.getErrorLogs(category, limit);
+    res.status(HTTP_STATUS.OK).json({ errors, category, limit });
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get error logs');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get error logs' });
+  }
+});
+
+// GET /api/system/health - System health check
+app.get('/api/system/health', (_req: Request, res: Response) => {
+  try {
+    const health = performanceService.isSystemHealthy();
+    res.status(HTTP_STATUS.OK).json(health);
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Failed to get system health');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get system health' });
   }
 });
 

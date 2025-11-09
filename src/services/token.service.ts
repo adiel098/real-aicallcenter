@@ -92,21 +92,19 @@ export function useFormToken(token: string): boolean {
 }
 
 /**
- * Build full form URL with token and phone number
+ * Build full form URL with token
  * @param baseUrl - Base URL of the application (ngrok URL)
  * @param token - Generated token
- * @param phoneNumber - Phone number to pre-fill
  * @returns Full form URL
  */
-export function buildFormUrl(baseUrl: string, token: string, phoneNumber: string): string {
+export function buildFormUrl(baseUrl: string, token: string): string {
   // Remove trailing slash from base URL
   const cleanBaseUrl = baseUrl.replace(/\/$/, '');
 
   // Encode parameters
   const encodedToken = encodeURIComponent(token);
-  const encodedPhone = encodeURIComponent(phoneNumber);
 
-  return `${cleanBaseUrl}/form.html?token=${encodedToken}&phone=${encodedPhone}`;
+  return `${cleanBaseUrl}/form.html?token=${encodedToken}`;
 }
 
 /**

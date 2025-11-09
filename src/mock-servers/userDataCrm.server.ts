@@ -13,6 +13,8 @@ import { PORTS, HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../config/
 import {
   userDataDatabase,
   findUserDataByPhoneNumber,
+  findUserDataByMedicareNumber,
+  findUserDataByNameAndDOB,
   updateUserData,
   isUserDataComplete,
   createUserData,
@@ -396,6 +398,128 @@ app.use((err: Error, _req: Request, res: Response, _next: any) => {
     message: 'Internal server error',
     error: err.message,
   });
+});
+
+/**
+ * GET /api/users/search/by-medicare
+ *
+ * Find a user by Medicare number (MBI)
+ * Query parameter: mbi (Medicare Beneficiary Identifier)
+ *
+ * @example GET /api/users/search/by-medicare?mbi=1AB2-CD3-EF45
+ */
+app.get('/api/users/search/by-medicare', (req: Request, res: Response) => {
+  const requestLogger = (res as any).requestLogger;
+  const { mbi } = req.query;
+
+  if (!mbi || typeof mbi !== 'string') {
+    requestLogger.warn('Medicare number (mbi) query parameter missing');
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      found: false,
+      userData: null,
+      isComplete: false,
+      missingFields: [],
+      message: 'Medicare number (mbi) query parameter is required',
+    });
+  }
+
+  requestLogger.debug({ mbi }, 'Looking up user by Medicare number');
+
+  const userData = findUserDataByMedicareNumber(mbi);
+
+  if (!userData) {
+    requestLogger.info({ mbi }, 'User not found by Medicare number');
+    return res.status(HTTP_STATUS.NOT_FOUND).json({
+      found: false,
+      userData: null,
+      isComplete: false,
+      missingFields: [],
+      message: 'User not found with this Medicare number',
+    });
+  }
+
+  const complete = isUserDataComplete(userData);
+
+  requestLogger.info(
+    {
+      mbi,
+      userId: userData.userId,
+      name: userData.name,
+      isComplete: complete,
+    },
+    'User found by Medicare number'
+  );
+
+  const response: UserDataResponse = {
+    found: true,
+    userData,
+    isComplete: complete,
+    missingFields: userData.missingFields,
+    message: 'User data retrieved successfully',
+  };
+
+  res.status(HTTP_STATUS.OK).json(response);
+});
+
+/**
+ * GET /api/users/search/by-name-dob
+ *
+ * Find a user by name and date of birth
+ * Query parameters: name, dob (YYYY-MM-DD format)
+ *
+ * @example GET /api/users/search/by-name-dob?name=John%20Smith&dob=1955-03-15
+ */
+app.get('/api/users/search/by-name-dob', (req: Request, res: Response) => {
+  const requestLogger = (res as any).requestLogger;
+  const { name, dob } = req.query;
+
+  if (!name || typeof name !== 'string' || !dob || typeof dob !== 'string') {
+    requestLogger.warn('Name and DOB query parameters missing');
+    return res.status(HTTP_STATUS.BAD_REQUEST).json({
+      found: false,
+      userData: null,
+      isComplete: false,
+      missingFields: [],
+      message: 'Name and dob (date of birth) query parameters are required',
+    });
+  }
+
+  requestLogger.debug({ name, dob }, 'Looking up user by name and DOB');
+
+  const userData = findUserDataByNameAndDOB(name, dob);
+
+  if (!userData) {
+    requestLogger.info({ name, dob }, 'User not found by name and DOB');
+    return res.status(HTTP_STATUS.NOT_FOUND).json({
+      found: false,
+      userData: null,
+      isComplete: false,
+      missingFields: [],
+      message: 'User not found with this name and date of birth',
+    });
+  }
+
+  const complete = isUserDataComplete(userData);
+
+  requestLogger.info(
+    {
+      name,
+      dob,
+      userId: userData.userId,
+      isComplete: complete,
+    },
+    'User found by name and DOB'
+  );
+
+  const response: UserDataResponse = {
+    found: true,
+    userData,
+    isComplete: complete,
+    missingFields: userData.missingFields,
+    message: 'User data retrieved successfully',
+  };
+
+  res.status(HTTP_STATUS.OK).json(response);
 });
 
 /**

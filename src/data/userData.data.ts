@@ -205,12 +205,53 @@ export const userDataDatabase: UserData[] = [
 
 /**
  * Helper function to find user data by phone number
+ * Searches both primary phone and alternate phones
  *
  * @param phoneNumber - Phone number in E.164 format
  * @returns UserData if found, undefined otherwise
  */
 export const findUserDataByPhoneNumber = (phoneNumber: string): UserData | undefined => {
-  return userDataDatabase.find((user) => user.phoneNumber === phoneNumber);
+  return userDataDatabase.find((user) => {
+    // Check primary phone number
+    if (user.phoneNumber === phoneNumber) {
+      return true;
+    }
+    // Check alternate phones if they exist
+    if (user.alternatePhones && user.alternatePhones.includes(phoneNumber)) {
+      return true;
+    }
+    return false;
+  });
+};
+
+/**
+ * Helper function to find user data by Medicare number (MBI)
+ *
+ * @param medicareNumber - Medicare Beneficiary Identifier (e.g., "1AB2-CD3-EF45")
+ * @returns UserData if found, undefined otherwise
+ */
+export const findUserDataByMedicareNumber = (medicareNumber: string): UserData | undefined => {
+  return userDataDatabase.find((user) => {
+    return user.medicareData.medicareNumber === medicareNumber;
+  });
+};
+
+/**
+ * Helper function to find user data by name and date of birth
+ * Name matching is case-insensitive
+ *
+ * @param name - User's full name
+ * @param dateOfBirth - Date of birth in ISO format (YYYY-MM-DD)
+ * @returns UserData if found, undefined otherwise
+ */
+export const findUserDataByNameAndDOB = (name: string, dateOfBirth: string): UserData | undefined => {
+  const normalizedSearchName = name.toLowerCase().trim();
+
+  return userDataDatabase.find((user) => {
+    const normalizedUserName = user.name.toLowerCase().trim();
+    // Simple name match for now - in production you might want fuzzy matching
+    return normalizedUserName === normalizedSearchName;
+  });
 };
 
 /**

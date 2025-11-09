@@ -159,6 +159,17 @@ export interface SendFormLinkSMSArgs {
   phoneNumber: string;
 }
 
+/** Arguments for find_user_by_medicare_number tool */
+export interface FindUserByMedicareNumberArgs {
+  medicareNumber: string;
+}
+
+/** Arguments for find_user_by_name_dob tool */
+export interface FindUserByNameDOBArgs {
+  name: string;
+  dateOfBirth: string; // YYYY-MM-DD format
+}
+
 /**
  * VAPI Call Event Types
  *
