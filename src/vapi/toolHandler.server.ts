@@ -35,10 +35,19 @@ app.use(
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        connectSrc: ["'self'", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"],
-        scriptSrc: ["'self'"],
+        connectSrc: [
+          "'self'",
+          "http://localhost:3001",
+          "http://localhost:3002",
+          "http://localhost:3003",
+          "https://api.vapi.ai",
+          "wss://api.vapi.ai",
+        ],
+        scriptSrc: ["'self'", "https://unpkg.com"],
         scriptSrcAttr: ["'none'"],  // Explicitly block inline event handlers for security
         styleSrc: ["'self'", "'unsafe-inline'"],
+        fontSrc: ["'self'", "data:"],
+        imgSrc: ["'self'", "data:", "https:"],
       },
     },
   })
