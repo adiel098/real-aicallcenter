@@ -462,7 +462,10 @@ function handleUserInterrupted(_body: any, eventLogger: any): void {
 }
 
 async function handleEndOfCallReport(body: any, eventLogger: any): Promise<void> {
-  const { message, call } = body;
+  const { message } = body;
+
+  // VAPI sends call object in two possible locations - check both
+  const call = body.call || body.message?.call;
 
   // DEFENSIVE: Validate call object and id before processing
   if (!call || !call.id) {
@@ -1583,16 +1586,49 @@ app.post('/api/vapi/tool-calls', async (req: Request, res: Response) => {
 
       // Log tool execution to database
       try {
-        databaseService.insertToolExecution({
-          call_id: callId,
-          tool_name: toolName,
-          arguments: JSON.stringify(args),
-          result,
-          duration_ms: duration,
-          success,
-          error_message: errorMessage,
-          timestamp: new Date().toISOString(),
-        });
+        // Skip database persistence if callId is unknown
+        if (callId === 'unknown') {
+          callLogger.warn(
+            {
+              toolName,
+              reason: 'callId is unknown - missing call context from VAPI',
+            },
+            'Skipping database persistence for tool execution'
+          );
+        } else {
+          // Check if call record exists, auto-create if missing
+          const existingCall = databaseService.getCall(callId);
+          if (!existingCall) {
+            callLogger.warn(
+              {
+                callId,
+                phoneNumber: maskPhoneNumber(customerNumber),
+              },
+              'Call record not found in database - auto-creating minimal call record'
+            );
+
+            // Create minimal call record
+            databaseService.insertCall({
+              call_id: callId,
+              phone_number: customerNumber,
+              call_type: 'inbound', // Assume inbound unless we have other info
+              start_time: new Date().toISOString(),
+              is_business_hours: true,
+            });
+          }
+
+          // Insert tool execution record
+          databaseService.insertToolExecution({
+            call_id: callId,
+            tool_name: toolName,
+            arguments: JSON.stringify(args),
+            result,
+            duration_ms: duration,
+            success,
+            error_message: errorMessage,
+            timestamp: new Date().toISOString(),
+          });
+        }
       } catch (dbError) {
         callLogger.error({ dbError }, 'Failed to persist tool execution to database');
       }
