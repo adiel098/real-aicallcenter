@@ -173,9 +173,9 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
 
    4. **Collect missing info** (if incomplete):
       - Medicare plan level (Part A, B, C, D, Advantage)
-      - Colorblindness status (required - 40pts mandatory)
+      - Colorblindness status (MANDATORY for qualification)
       - Type of colorblindness (red-green, blue-yellow, total)
-      - Age (65+ gets 20pts)
+      - Age (informational only)
       - Current eyewear usage
 
    5. **Update data:** Use update_user_data to save collected information
@@ -204,7 +204,7 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
    - After-hours calls: Politely explain hours and use schedule_callback
 
    **Important Notes:**
-   - Colorblindness is MANDATORY (40 points required)
+   - Colorblindness diagnosis is MANDATORY for qualification
    - Be empathetic and conversational
    - Don't overwhelm with questions - ask one at a time
    - Always explain why you need specific information
@@ -350,7 +350,7 @@ Medicare members are classified using **binary matching** (ALL criteria must be 
 
 The system automatically sends dispositions to VICI dialer based on call outcomes:
 
-1. **SALE** - Qualified member (Medicare validated + 80+ eligibility score) → Transfers to extension 2002
+1. **SALE** - Qualified member (all 4 binary criteria met: Medicare plan + Plan covers vision + Colorblindness + MBI) → Transfers to extension 2002
 2. **NQI** - Not Qualified Insurance (doesn't meet Medicare eligibility requirements)
 3. **NI** - Not Interested (caller explicitly declines program)
 4. **NA** - No Answer (rings 30+ seconds without pickup OR after-hours call)

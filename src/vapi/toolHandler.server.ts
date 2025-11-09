@@ -1518,7 +1518,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         properties: {
           phoneNumber: {
             type: 'string',
-            description: 'Phone number in E.164 format (e.g., +12025551234)',
+            description: 'Phone number (e.g., +12025551234)',
           },
         },
         required: ['phoneNumber'],
@@ -1532,7 +1532,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         properties: {
           phoneNumber: {
             type: 'string',
-            description: 'Phone number in E.164 format',
+            description: 'Phone number',
           },
         },
         required: ['phoneNumber'],
@@ -1546,7 +1546,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         properties: {
           phoneNumber: {
             type: 'string',
-            description: 'Phone number in E.164 format',
+            description: 'Phone number',
           },
           medicareData: {
             type: 'object',
@@ -1568,7 +1568,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         properties: {
           phoneNumber: {
             type: 'string',
-            description: 'Phone number in E.164 format',
+            description: 'Phone number',
           },
           ssnLast4: {
             type: 'string',
@@ -1598,7 +1598,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         properties: {
           phoneNumber: {
             type: 'string',
-            description: 'Phone number in E.164 format',
+            description: 'Phone number',
           },
         },
         required: ['phoneNumber'],
@@ -1612,7 +1612,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         properties: {
           phoneNumber: {
             type: 'string',
-            description: 'Phone number in E.164 format',
+            description: 'Phone number',
           },
           reason: {
             type: 'string',
@@ -1638,7 +1638,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         properties: {
           phoneNumber: {
             type: 'string',
-            description: 'Phone number in E.164 format',
+            description: 'Phone number',
           },
           transferReason: {
             type: 'string',
