@@ -140,18 +140,6 @@ app.post('/', async (req: Request, res: Response) => {
     // 2. body.message.call (other webhook types like speech-update, transcript, status-update)
     const call = body.call || body.message?.call;
 
-    // DEBUG: Log ALL incoming webhooks to see structure
-    logger.info(
-      {
-        'DEBUG_MESSAGE_TYPE': messageType,
-        'DEBUG_HAS_CALL': !!call,
-        'DEBUG_CALL_LOCATION': body.call ? 'body.call' : body.message?.call ? 'body.message.call' : 'none',
-        'DEBUG_CUSTOMER_NUMBER': call?.customer?.number || 'not found',
-        'DEBUG_BODY_KEYS': Object.keys(body),
-      },
-      `🔍 DEBUG: VAPI webhook received - type: ${messageType}`
-    );
-
     // Some message types don't have a call object - handle gracefully
     if (!call) {
       logger.warn(
@@ -380,6 +368,7 @@ function handleTranscript(body: any, eventLogger: any): void {
   const { message } = body;
   const { role, transcript, transcriptType } = message;
 
+  // Only log final transcripts to reduce noise
   if (transcriptType === 'final') {
     if (role === 'user') {
       eventLogger.info(
@@ -392,24 +381,13 @@ function handleTranscript(body: any, eventLogger: any): void {
         `🤖 ASSISTANT SAID: "${transcript}"`
       );
     }
-  } else {
-    // Partial transcripts (optional, can be noisy)
-    eventLogger.debug(
-      { role, transcript, transcriptType },
-      `💬 ${role.toUpperCase()} speaking... "${transcript}"`
-    );
   }
+  // Partial transcripts are suppressed to keep logs clean
 }
 
 function handleSpeechUpdate(body: any, eventLogger: any): void {
-  const { message } = body;
-  const { role, status } = message;
-
-  if (status === 'started') {
-    eventLogger.debug({ role }, `🗣️  ${role === 'user' ? 'User' : 'Assistant'} started speaking`);
-  } else if (status === 'stopped') {
-    eventLogger.debug({ role }, `🔇 ${role === 'user' ? 'User' : 'Assistant'} stopped speaking`);
-  }
+  // Speech updates are suppressed to keep logs clean
+  // Final transcripts already show what was said
 }
 
 function handleToolCalls(body: any, eventLogger: any): void {
