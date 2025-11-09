@@ -130,6 +130,30 @@ export interface SaveClassificationResultArgs {
   reason: string;
 }
 
+/** Arguments for validate_medicare_eligibility tool */
+export interface ValidateMedicareEligibilityArgs {
+  phoneNumber: string;
+  ssnLast4: string;
+  dateOfBirth: string; // YYYY-MM-DD format
+  firstName?: string;
+  lastName?: string;
+}
+
+/** Arguments for schedule_callback tool */
+export interface ScheduleCallbackArgs {
+  phoneNumber: string;
+  reason: string;
+  preferredDate?: string; // ISO datetime
+  notes?: string;
+}
+
+/** Arguments for transfer_call tool */
+export interface TransferCallArgs {
+  phoneNumber: string;
+  transferReason: string;
+  extension?: string; // Default: 2002 (human CRM agent)
+}
+
 /**
  * VAPI Call Event Types
  *
@@ -277,3 +301,117 @@ export type VAPIEvent =
   | VAPIMessageEvent
   | VAPISpeechInterruptedEvent
   | VAPIHangEvent;
+
+/**
+ * VAPI Server Message Types
+ *
+ * VAPI sends different types of server messages to the serverUrl.
+ * Each message has a "message" field that contains the message type.
+ */
+
+/** Status Update Message (call started/ended) */
+export interface VAPIStatusUpdateMessage {
+  message: {
+    type: 'status-update';
+    status: 'queued' | 'ringing' | 'in-progress' | 'forwarding' | 'ended';
+    call: VAPICall;
+    endedReason?: string;
+  };
+}
+
+/** Transcript Message (real-time transcription) */
+export interface VAPITranscriptMessage {
+  message: {
+    type: 'transcript';
+    role: 'user' | 'assistant';
+    transcript: string;
+    transcriptType: 'partial' | 'final';
+  };
+  call: VAPICall;
+}
+
+/** Speech Update Message (user/assistant speech events) */
+export interface VAPISpeechUpdateMessage {
+  message: {
+    type: 'speech-update';
+    role: 'user' | 'assistant';
+    status: 'started' | 'stopped';
+  };
+  call: VAPICall;
+}
+
+/** Tool Calls Message (function calling during conversation) */
+export interface VAPIToolCallsMessage {
+  message: {
+    type: 'tool-calls';
+    toolCalls: VAPIToolCall[];
+    toolCallList: Array<{
+      id: string;
+      type: 'function';
+      function: {
+        name: string;
+        arguments: string; // JSON string
+      };
+    }>;
+  };
+  call: VAPICall;
+}
+
+/** Tool Calls Result Message (results from tool execution) */
+export interface VAPIToolCallsResultMessage {
+  message: {
+    type: 'tool-calls-result';
+    toolCallResults: Array<{
+      toolCallId: string;
+      result: any;
+    }>;
+  };
+  call: VAPICall;
+}
+
+/** Hang Message */
+export interface VAPIHangMessage {
+  message: {
+    type: 'hang';
+  };
+  call: VAPICall;
+}
+
+/** User Interrupted Message */
+export interface VAPIUserInterruptedMessage {
+  message: {
+    type: 'user-interrupted';
+  };
+  call: VAPICall;
+}
+
+/** End of Call Report Message */
+export interface VAPIEndOfCallReportMessage {
+  message: {
+    type: 'end-of-call-report';
+    endedReason: string;
+    summary?: string;
+    messages?: VAPIConversationMessage[];
+    messagesOpenAIFormatted?: any[];
+    recordingUrl?: string;
+    stereoRecordingUrl?: string;
+    transcript?: string;
+    analysis?: any;
+    costs?: {
+      total: number;
+      [key: string]: any;
+    };
+  };
+  call: VAPICall;
+}
+
+/** Union type for all VAPI server messages */
+export type VAPIServerMessage =
+  | VAPIStatusUpdateMessage
+  | VAPITranscriptMessage
+  | VAPISpeechUpdateMessage
+  | VAPIToolCallsMessage
+  | VAPIToolCallsResultMessage
+  | VAPIHangMessage
+  | VAPIUserInterruptedMessage
+  | VAPIEndOfCallReportMessage;

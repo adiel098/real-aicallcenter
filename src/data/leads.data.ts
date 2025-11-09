@@ -14,7 +14,7 @@ import { Lead } from '../types/lead.types';
 export const leadsDatabase: Lead[] = [
   {
     leadId: 'lead-001',
-    phoneNumber: '+972501234001',
+    phoneNumber: '+972527373474',
     name: 'John Smith',
     email: 'john.smith@example.com',
     city: 'Washington',

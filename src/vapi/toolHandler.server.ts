@@ -21,14 +21,22 @@ import {
   UpdateUserDataArgs,
   ClassifyUserArgs,
   SaveClassificationResultArgs,
+  ValidateMedicareEligibilityArgs,
+  ScheduleCallbackArgs,
+  TransferCallArgs,
   VAPICallStartedEvent,
   VAPICallEndedEvent,
   VAPIMessageEvent,
   VAPISpeechInterruptedEvent,
   VAPIHangEvent,
+  VAPIServerMessage,
 } from '../types/vapi.types';
 import * as vapiService from '../services/vapi.service';
 import { maskPhoneNumber } from '../utils/phoneNumber.util';
+import { medicareService } from '../services/medicare.service';
+import { callStateService, CallStatus } from '../services/callState.service';
+import { callStatusDetectionService } from '../services/callStatusDetection.service';
+import { viciService } from '../services/vici.service';
 
 // Initialize Express app
 const app = express();
@@ -91,6 +99,361 @@ app.use((req: Request, res: Response, next) => {
   (res as any).requestLogger = requestLogger;
   next();
 });
+
+/**
+ * Unified VAPI Server Message Handler
+ *
+ * VAPI sends ALL server messages to the base serverUrl ("/").
+ * This handler receives all events and routes them based on message.type.
+ *
+ * Message types:
+ * - status-update: Call started/ended
+ * - transcript: Real-time transcription
+ * - speech-update: User/assistant speech events
+ * - tool-calls: Function calls during conversation
+ * - tool-calls-result: Results from tool execution
+ * - hang: Call hung up
+ * - user-interrupted: User interrupts assistant
+ * - end-of-call-report: Complete call summary
+ */
+app.post('/', async (req: Request, res: Response) => {
+  try {
+    const body = req.body as any;
+
+    // Check if this is a VAPI server message
+    if (!body.message || !body.message.type) {
+      // Not a VAPI message, ignore
+      return res.status(HTTP_STATUS.OK).send();
+    }
+
+    const messageType = body.message.type;
+    const call = body.call;
+
+    // Create logger with call context
+    const eventLogger = createChildLogger({
+      callId: call?.id,
+      customerNumber: call?.customer?.number ? maskPhoneNumber(call.customer.number) :
+                      call?.phoneNumberFrom ? maskPhoneNumber(call.phoneNumberFrom) : 'unknown',
+      event: messageType,
+    });
+
+    // Route based on message type
+    switch (messageType) {
+      case 'status-update':
+        await handleStatusUpdate(body, eventLogger);
+        break;
+
+      case 'transcript':
+        handleTranscript(body, eventLogger);
+        break;
+
+      case 'speech-update':
+        handleSpeechUpdate(body, eventLogger);
+        break;
+
+      case 'tool-calls':
+        handleToolCalls(body, eventLogger);
+        break;
+
+      case 'tool-calls-result':
+        handleToolCallsResult(body, eventLogger);
+        break;
+
+      case 'hang':
+        handleHang(body, eventLogger);
+        break;
+
+      case 'user-interrupted':
+        handleUserInterrupted(body, eventLogger);
+        break;
+
+      case 'end-of-call-report':
+        handleEndOfCallReport(body, eventLogger);
+        break;
+
+      default:
+        eventLogger.debug({ messageType }, 'Unknown message type received');
+    }
+
+    return res.status(HTTP_STATUS.OK).send();
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error processing VAPI server message');
+    return res.status(HTTP_STATUS.OK).send(); // Always return 200 to VAPI
+  }
+});
+
+/**
+ * Event Handler Functions
+ */
+
+async function handleStatusUpdate(body: any, eventLogger: any): Promise<void> {
+  const { message, call } = body;
+  const { status, endedReason } = message;
+
+  if (status === 'in-progress') {
+    // Call started - create session and assign agent extension
+    const phoneNumber = call.customer?.number || call.phoneNumberFrom || 'unknown';
+    const session = callStateService.createCallSession(call.id, phoneNumber);
+
+    eventLogger.info(
+      {
+        callType: call.type,
+        phoneFrom: call.phoneNumberFrom,
+        phoneTo: call.phoneNumberTo,
+        startedAt: call.startedAt,
+        agentExtension: session.agentExtension,
+        withinBusinessHours: session.withinBusinessHours,
+      },
+      `📞 CALL STARTED - Agent: ${session.agentExtension} - Business Hours: ${session.withinBusinessHours ? 'Yes' : 'No'}`
+    );
+
+    // Check business hours and send disposition if outside hours
+    if (!session.withinBusinessHours) {
+      eventLogger.warn('Call received outside business hours');
+
+      // Send NA (No Answer) disposition for after-hours calls
+      try {
+        const afterHoursDisposition = await viciService.sendDisposition(
+          phoneNumber,
+          'NA',
+          {
+            agentId: session.agentExtension,
+            callDuration: 0,
+            reason: 'After-hours call - outside business hours (9am-5:45pm EST Mon-Fri)',
+          }
+        );
+
+        eventLogger.info(
+          {
+            disposition: 'NA',
+            dispositionId: afterHoursDisposition.dispositionId,
+          },
+          'After-hours disposition sent'
+        );
+      } catch (error: any) {
+        eventLogger.error({ error: error.message }, 'Failed to send after-hours disposition');
+      }
+    }
+
+    // Update call state
+    callStateService.updateCallState(call.id, 'CONNECTED');
+  } else if (status === 'ended') {
+    // Call ended - analyze status and send appropriate disposition
+    const phoneNumber = call.customer?.number || call.phoneNumberFrom || 'unknown';
+    const callDuration = call.duration || 0;
+
+    // Detect call status
+    const callStatus = callStatusDetectionService.detectStatusFromEndReason(endedReason || call.endReason);
+
+    eventLogger.info(
+      {
+        duration: callDuration,
+        endedReason: endedReason || call.endReason,
+        endedAt: call.endedAt,
+        detectedStatus: callStatus,
+      },
+      `📴 CALL ENDED - Duration: ${callDuration}s - Reason: ${endedReason || call.endReason || 'unknown'} - Status: ${callStatus}`
+    );
+
+    // Get call session
+    const session = callStateService.getCallSession(call.id);
+
+    // Only send disposition if one hasn't been sent already (during classify_and_save_user)
+    if (session && !session.dispositionSent && callStatus !== 'LIVE_PERSON' && callStatus !== 'UNKNOWN') {
+      // Map call status to disposition
+      const disposition = callStatusDetectionService.mapStatusToDisposition(callStatus);
+
+      if (disposition) {
+        try {
+          const dispositionResult = await viciService.sendDisposition(
+            phoneNumber,
+            disposition,
+            {
+              agentId: session.agentExtension,
+              callDuration,
+              reason: `Call status: ${callStatus}`,
+            }
+          );
+
+          callStateService.markDispositionSent(call.id, disposition, dispositionResult.dispositionId);
+
+          eventLogger.info(
+            {
+              disposition,
+              dispositionId: dispositionResult.dispositionId,
+              callStatus,
+            },
+            `Automatic disposition sent: ${disposition} (${callStatus})`
+          );
+        } catch (error: any) {
+          eventLogger.error({ error: error.message, disposition }, 'Failed to send automatic disposition');
+        }
+      }
+    }
+
+    // End call session
+    callStateService.endCallSession(call.id);
+  } else {
+    eventLogger.info({ status }, `📞 Call status: ${status}`);
+
+    // Update call state
+    if (call.id) {
+      if (status === 'ringing') {
+        callStateService.updateCallState(call.id, 'PRE_CONNECT');
+      } else if (status === 'in-progress') {
+        callStateService.updateCallState(call.id, 'IN_PROGRESS');
+      }
+    }
+  }
+}
+
+function handleTranscript(body: any, eventLogger: any): void {
+  const { message } = body;
+  const { role, transcript, transcriptType } = message;
+
+  if (transcriptType === 'final') {
+    if (role === 'user') {
+      eventLogger.info(
+        { transcript },
+        `👤 USER SAID: "${transcript}"`
+      );
+    } else if (role === 'assistant') {
+      eventLogger.info(
+        { transcript },
+        `🤖 ASSISTANT SAID: "${transcript}"`
+      );
+    }
+  } else {
+    // Partial transcripts (optional, can be noisy)
+    eventLogger.debug(
+      { role, transcript, transcriptType },
+      `💬 ${role.toUpperCase()} speaking... "${transcript}"`
+    );
+  }
+}
+
+function handleSpeechUpdate(body: any, eventLogger: any): void {
+  const { message } = body;
+  const { role, status } = message;
+
+  if (status === 'started') {
+    eventLogger.debug({ role }, `🗣️  ${role === 'user' ? 'User' : 'Assistant'} started speaking`);
+  } else if (status === 'stopped') {
+    eventLogger.debug({ role }, `🔇 ${role === 'user' ? 'User' : 'Assistant'} stopped speaking`);
+  }
+}
+
+function handleToolCalls(body: any, eventLogger: any): void {
+  const { message } = body;
+  const { toolCallList } = message;
+
+  if (!toolCallList || toolCallList.length === 0) {
+    return;
+  }
+
+  eventLogger.info(
+    { toolCallCount: toolCallList.length },
+    `🔧 TOOL CALLS (${toolCallList.length})`
+  );
+
+  toolCallList.forEach((toolCall: any, index: number) => {
+    const { function: func, id } = toolCall;
+    const args = func.arguments ? JSON.parse(func.arguments) : {};
+
+    // Mask phone numbers in arguments for privacy
+    const maskedArgs = { ...args };
+    if (maskedArgs.phoneNumber) {
+      maskedArgs.phoneNumber = maskPhoneNumber(maskedArgs.phoneNumber);
+    }
+
+    eventLogger.info(
+      {
+        toolCallId: id,
+        toolName: func.name,
+        arguments: maskedArgs,
+      },
+      `  ${index + 1}. 🔧 ${func.name}`
+    );
+    eventLogger.info(
+      { arguments: maskedArgs },
+      `     📥 Arguments: ${JSON.stringify(maskedArgs, null, 2)}`
+    );
+  });
+}
+
+function handleToolCallsResult(body: any, eventLogger: any): void {
+  const { message } = body;
+  const { toolCallResults } = message;
+
+  if (!toolCallResults || toolCallResults.length === 0) {
+    return;
+  }
+
+  eventLogger.info(
+    { resultCount: toolCallResults.length },
+    `✅ TOOL RESULTS (${toolCallResults.length})`
+  );
+
+  toolCallResults.forEach((result: any, index: number) => {
+    const { toolCallId, result: toolResult } = result;
+
+    eventLogger.info(
+      {
+        toolCallId,
+        result: toolResult,
+      },
+      `  ${index + 1}. ✅ Result for ${toolCallId}`
+    );
+    eventLogger.info(
+      { result: toolResult },
+      `     📤 Result: ${JSON.stringify(toolResult, null, 2)}`
+    );
+  });
+}
+
+function handleHang(body: any, eventLogger: any): void {
+  eventLogger.info('📞 CALL HUNG UP');
+}
+
+function handleUserInterrupted(body: any, eventLogger: any): void {
+  eventLogger.info('⚠️  USER INTERRUPTED ASSISTANT');
+}
+
+function handleEndOfCallReport(body: any, eventLogger: any): void {
+  const { message, call } = body;
+  const {
+    endedReason,
+    summary,
+    messages,
+    recordingUrl,
+    transcript,
+    costs,
+  } = message;
+
+  eventLogger.info('📊 END OF CALL REPORT');
+  eventLogger.info({ endedReason }, `   End Reason: ${endedReason}`);
+
+  if (summary) {
+    eventLogger.info({ summary }, `   Summary: ${summary}`);
+  }
+
+  if (messages && messages.length > 0) {
+    eventLogger.info({ messageCount: messages.length }, `   Messages: ${messages.length} total`);
+  }
+
+  if (recordingUrl) {
+    eventLogger.info({ recordingUrl }, `   Recording: ${recordingUrl}`);
+  }
+
+  if (costs) {
+    eventLogger.info({ costs }, `   Costs: $${costs.total?.toFixed(4) || '0.0000'}`);
+  }
+
+  if (transcript) {
+    eventLogger.info('   Full Transcript:');
+    eventLogger.info(transcript);
+  }
+}
 
 /**
  * Tool handler functions
@@ -476,16 +839,277 @@ const handleClassifyAndSaveUser = async (args: ClassifyUserArgs, callLogger: any
 };
 
 /**
+ * Handle validate_medicare_eligibility tool call
+ * Validates Medicare eligibility through SSN → MBI → Insurance Check workflow
+ * Implements retry logic (max 3 attempts) as per AlexAI_Workflow_Full_Detailed.md
+ */
+const handleValidateMedicareEligibility = async (
+  args: ValidateMedicareEligibilityArgs,
+  callLogger: any,
+  callId: string
+): Promise<string> => {
+  callLogger.info(
+    {
+      phoneNumber: maskPhoneNumber(args.phoneNumber),
+      ssnLast4: `***${args.ssnLast4}`,
+    },
+    'Tool: validate_medicare_eligibility'
+  );
+
+  // Get or create call session
+  let session = callStateService.getCallSession(callId);
+  if (!session) {
+    session = callStateService.createCallSession(callId, args.phoneNumber);
+  }
+
+  // Check if max retries exceeded
+  if (callStateService.hasExceededMaxRetries(callId)) {
+    callLogger.warn({ attempts: session.mbiValidationAttempts }, 'Max MBI validation retries exceeded');
+
+    return JSON.stringify({
+      success: false,
+      validated: false,
+      maxRetriesExceeded: true,
+      attempts: session.mbiValidationAttempts,
+      message: `Unable to validate Medicare eligibility after ${session.maxRetries} attempts. We're having trouble verifying your Medicare information. Would you like us to schedule a callback for when we can help you complete this process?`,
+    });
+  }
+
+  // Increment validation attempt
+  const canRetry = callStateService.incrementMBIAttempts(callId);
+
+  try {
+    // Call Medicare validation service
+    const validationResult = await medicareService.validateMedicareEligibility(
+      args.ssnLast4,
+      args.dateOfBirth,
+      args.firstName,
+      args.lastName
+    );
+
+    if (validationResult.eligible) {
+      // Mark as validated
+      callStateService.markMedicareValidated(callId, true);
+
+      callLogger.info(
+        {
+          mbi: validationResult.mbiNumber ? `****-****-**${validationResult.mbiNumber.slice(-2)}` : 'N/A',
+          planLevel: validationResult.planLevel,
+        },
+        'Medicare eligibility validated successfully'
+      );
+
+      return JSON.stringify({
+        success: true,
+        validated: true,
+        eligible: true,
+        planLevel: validationResult.planLevel,
+        copay: validationResult.copay,
+        message: `Great news! Your Medicare eligibility has been verified. You have ${validationResult.planLevel} coverage${validationResult.copay ? ` with a $${validationResult.copay} copay` : ' with no copay'}.`,
+      });
+    } else {
+      // Not eligible or validation failed
+      callStateService.markMedicareValidated(callId, false);
+
+      const reason = validationResult.reason || 'UNKNOWN';
+
+      callLogger.warn({ reason, attempts: session.mbiValidationAttempts + 1 }, 'Medicare validation failed');
+
+      // Check if we can retry
+      if (canRetry && reason.includes('ERROR')) {
+        return JSON.stringify({
+          success: false,
+          validated: false,
+          canRetry: true,
+          attempts: session.mbiValidationAttempts,
+          maxRetries: session.maxRetries,
+          message: `We encountered an issue verifying your Medicare information. Could you please verify your information and try again? This is attempt ${session.mbiValidationAttempts} of ${session.maxRetries}.`,
+        });
+      } else {
+        // Max retries or permanent failure
+        return JSON.stringify({
+          success: false,
+          validated: false,
+          eligible: false,
+          reason,
+          message: `Unfortunately, we were unable to verify your Medicare eligibility. Reason: ${reason}. You may not qualify for this program, or there may be an issue with your Medicare information on file.`,
+        });
+      }
+    }
+  } catch (error: any) {
+    callLogger.error({ error: error.message, attempts: session.mbiValidationAttempts }, 'Medicare validation error');
+
+    if (canRetry) {
+      return JSON.stringify({
+        success: false,
+        validated: false,
+        error: error.message,
+        canRetry: true,
+        attempts: session.mbiValidationAttempts,
+        message: `We're experiencing technical difficulties validating your Medicare information. Would you like to try again? This is attempt ${session.mbiValidationAttempts} of ${session.maxRetries}.`,
+      });
+    } else {
+      return JSON.stringify({
+        success: false,
+        validated: false,
+        error: error.message,
+        maxRetriesExceeded: true,
+        message: `We've tried ${session.maxRetries} times but are unable to validate your Medicare information due to technical issues. Would you like us to schedule a callback to help you later?`,
+      });
+    }
+  }
+};
+
+/**
+ * Handle schedule_callback tool call
+ * Schedules a callback through VICI API
+ * Triggered when: data collection incomplete, max retries exceeded, or after-hours calls
+ */
+const handleScheduleCallback = async (
+  args: ScheduleCallbackArgs,
+  callLogger: any,
+  callId: string
+): Promise<string> => {
+  callLogger.info(
+    {
+      phoneNumber: maskPhoneNumber(args.phoneNumber),
+      reason: args.reason,
+    },
+    'Tool: schedule_callback'
+  );
+
+  // Get call session
+  const session = callStateService.getCallSession(callId);
+  const agentId = session?.agentExtension || '8001';
+
+  // Calculate callback date/time
+  let callbackDateTime = args.preferredDate;
+  if (!callbackDateTime) {
+    // Default: next business day at 10am EST
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(10, 0, 0, 0);
+    callbackDateTime = tomorrow.toISOString();
+  }
+
+  try {
+    // Call VICI callback API
+    const callbackResult = await viciService.scheduleCallback(
+      args.phoneNumber,
+      callbackDateTime,
+      args.reason,
+      {
+        agentId,
+        notes: args.notes,
+      }
+    );
+
+    // Mark callback as scheduled in session
+    if (session) {
+      callStateService.markCallbackScheduled(callId, callbackDateTime);
+    }
+
+    callLogger.info(
+      {
+        callbackId: callbackResult.callbackId,
+        callbackDateTime,
+      },
+      'Callback scheduled successfully'
+    );
+
+    // Format callback time for user
+    const callbackDate = new Date(callbackDateTime);
+    const formattedTime = callbackDate.toLocaleString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZone: 'America/New_York',
+    });
+
+    return JSON.stringify({
+      success: true,
+      callbackScheduled: true,
+      callbackId: callbackResult.callbackId,
+      callbackDateTime,
+      message: `Perfect! I've scheduled a callback for ${formattedTime} Eastern Time. We'll call you back then to complete your Medicare eligibility verification. Is there anything else I can help you with today?`,
+    });
+  } catch (error: any) {
+    callLogger.error({ error: error.message }, 'Failed to schedule callback');
+
+    return JSON.stringify({
+      success: false,
+      error: error.message,
+      message: `I apologize, but I'm having trouble scheduling your callback right now. Please try calling us back at your convenience during our business hours: Monday through Friday, 9am to 5:45pm Eastern Time.`,
+    });
+  }
+};
+
+/**
+ * Handle transfer_call tool call
+ * Transfers call to human CRM agent (extension 2002)
+ * Triggered after SALE disposition or when AI agent cannot handle request
+ */
+const handleTransferCall = async (
+  args: TransferCallArgs,
+  callLogger: any,
+  callId: string
+): Promise<string> => {
+  callLogger.info(
+    {
+      phoneNumber: maskPhoneNumber(args.phoneNumber),
+      transferReason: args.transferReason,
+      extension: args.extension || '2002',
+    },
+    'Tool: transfer_call'
+  );
+
+  const targetExtension = args.extension || '2002'; // Default: human CRM agent
+
+  try {
+    // NOTE: Actual call transfer would be handled by VAPI's transfer functionality
+    // This tool just logs the intent and prepares the transfer
+
+    callLogger.info(
+      {
+        targetExtension,
+        reason: args.transferReason,
+      },
+      'Call transfer initiated'
+    );
+
+    return JSON.stringify({
+      success: true,
+      transferInitiated: true,
+      targetExtension,
+      message: `Great! I'm transferring you now to one of our specialists at extension ${targetExtension} who can help you complete your enrollment. Please hold for just a moment.`,
+    });
+  } catch (error: any) {
+    callLogger.error({ error: error.message }, 'Failed to transfer call');
+
+    return JSON.stringify({
+      success: false,
+      error: error.message,
+      message: `I apologize, but I'm having trouble transferring your call right now. Let me take down your information and have someone call you back shortly.`,
+    });
+  }
+};
+
+/**
  * Main tool call router
  * Routes incoming tool calls to the appropriate handler function
  *
- * Available tools (4 total):
+ * Available tools (7 total):
  * - check_lead: Find caller in system
  * - get_user_data: Get Medicare data and missing fields
  * - update_user_data: Collect Medicare info from conversation
+ * - validate_medicare_eligibility: SSN → MBI → Insurance validation (NEW)
  * - classify_and_save_user: Classify eligibility + Save + Send VICI disposition (all-in-one)
+ * - schedule_callback: Schedule callback through VICI (NEW)
+ * - transfer_call: Transfer to human agent extension 2002 (NEW)
  */
-const handleToolCall = async (toolName: string, args: any, callLogger: any): Promise<string> => {
+const handleToolCall = async (toolName: string, args: any, callLogger: any, callId: string): Promise<string> => {
   callLogger.debug({ toolName, args }, 'Routing tool call');
 
   try {
@@ -499,8 +1123,17 @@ const handleToolCall = async (toolName: string, args: any, callLogger: any): Pro
       case 'update_user_data':
         return await handleUpdateUserData(args as UpdateUserDataArgs, callLogger);
 
+      case 'validate_medicare_eligibility':
+        return await handleValidateMedicareEligibility(args as ValidateMedicareEligibilityArgs, callLogger, callId);
+
       case 'classify_and_save_user':
         return await handleClassifyAndSaveUser(args as ClassifyUserArgs, callLogger);
+
+      case 'schedule_callback':
+        return await handleScheduleCallback(args as ScheduleCallbackArgs, callLogger, callId);
+
+      case 'transfer_call':
+        return await handleTransferCall(args as TransferCallArgs, callLogger, callId);
 
       // Legacy tools - removed for simplified workflow
       // classify_user and save_classification_result have been replaced by classify_and_save_user
@@ -508,7 +1141,7 @@ const handleToolCall = async (toolName: string, args: any, callLogger: any): Pro
       default:
         callLogger.warn({ toolName }, 'Unknown tool name');
         return JSON.stringify({
-          error: `Unknown tool: ${toolName}. Available tools: check_lead, get_user_data, update_user_data, classify_and_save_user`,
+          error: `Unknown tool: ${toolName}. Available tools: check_lead, get_user_data, update_user_data, validate_medicare_eligibility, classify_and_save_user, schedule_callback, transfer_call`,
         });
     }
   } catch (error: any) {
@@ -597,7 +1230,7 @@ app.post('/api/vapi/tool-calls', async (req: Request, res: Response) => {
 
       // Execute tool handler
       const startTime = Date.now();
-      const result = await handleToolCall(toolName, args, callLogger);
+      const result = await handleToolCall(toolName, args, callLogger, callId);
       const duration = Date.now() - startTime;
 
       callLogger.info(
@@ -928,8 +1561,38 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
       },
     },
     {
+      name: 'validate_medicare_eligibility',
+      description: 'Validate Medicare eligibility through SSN → MBI → Insurance Check workflow. Implements 3-attempt retry logic. Call this BEFORE classify_and_save_user to verify Medicare coverage.',
+      parameters: {
+        type: 'object',
+        properties: {
+          phoneNumber: {
+            type: 'string',
+            description: 'Phone number in E.164 format',
+          },
+          ssnLast4: {
+            type: 'string',
+            description: 'Last 4 digits of Social Security Number',
+          },
+          dateOfBirth: {
+            type: 'string',
+            description: 'Date of birth in YYYY-MM-DD format',
+          },
+          firstName: {
+            type: 'string',
+            description: 'First name (optional, helps with verification)',
+          },
+          lastName: {
+            type: 'string',
+            description: 'Last name (optional, helps with verification)',
+          },
+        },
+        required: ['phoneNumber', 'ssnLast4', 'dateOfBirth'],
+      },
+    },
+    {
       name: 'classify_and_save_user',
-      description: 'ONE-STEP TOOL: Checks Medicare eligibility, saves result to CRM, and automatically sends VICI disposition (SALE if QUALIFIED, NQI if NOT_QUALIFIED). This is the final step after all data is collected.',
+      description: 'ONE-STEP TOOL: Checks Medicare eligibility, saves result to CRM, and automatically sends VICI disposition (SALE if QUALIFIED, NQI if NOT_QUALIFIED). This is the final step after all data is collected and Medicare is validated.',
       parameters: {
         type: 'object',
         properties: {
@@ -941,13 +1604,77 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         required: ['phoneNumber'],
       },
     },
+    {
+      name: 'schedule_callback',
+      description: 'Schedule a callback through VICI system. Use when: (1) Max Medicare validation retries exceeded, (2) Data collection incomplete, (3) Customer requests callback, or (4) After-hours call.',
+      parameters: {
+        type: 'object',
+        properties: {
+          phoneNumber: {
+            type: 'string',
+            description: 'Phone number in E.164 format',
+          },
+          reason: {
+            type: 'string',
+            description: 'Reason for callback (e.g., "Medicare validation failed after 3 attempts", "Customer requested callback", "After-hours call")',
+          },
+          preferredDate: {
+            type: 'string',
+            description: 'Preferred callback date/time in ISO format (optional, defaults to next business day at 10am EST)',
+          },
+          notes: {
+            type: 'string',
+            description: 'Additional notes about the callback (optional)',
+          },
+        },
+        required: ['phoneNumber', 'reason'],
+      },
+    },
+    {
+      name: 'transfer_call',
+      description: 'Transfer call to human CRM agent. Use after SALE disposition (qualified customer) or when AI cannot handle complex request.',
+      parameters: {
+        type: 'object',
+        properties: {
+          phoneNumber: {
+            type: 'string',
+            description: 'Phone number in E.164 format',
+          },
+          transferReason: {
+            type: 'string',
+            description: 'Reason for transfer (e.g., "Customer qualified - SALE disposition", "Complex inquiry requiring human agent")',
+          },
+          extension: {
+            type: 'string',
+            description: 'Target extension (optional, defaults to 2002 for human CRM agent)',
+          },
+        },
+        required: ['phoneNumber', 'transferReason'],
+      },
+    },
   ];
 
   res.status(HTTP_STATUS.OK).json({
     tools,
     serverUrl: `http://localhost:${PORTS.VAPI_HANDLER}/api/vapi/tool-calls`,
-    note: 'SIMPLIFIED 4-TOOL WORKFLOW: check_lead → get_user_data → update_user_data → classify_and_save_user. Copy these tool definitions to your VAPI dashboard. Update serverUrl if using ngrok or deployed URL.',
-    totalTools: 4,
+    note: 'COMPLETE 7-TOOL WORKFLOW: check_lead → get_user_data → update_user_data → validate_medicare_eligibility → classify_and_save_user → [schedule_callback OR transfer_call]. Copy these tool definitions to your VAPI dashboard. Update serverUrl if using ngrok or deployed URL.',
+    totalTools: 7,
+    workflow: {
+      standard: 'check_lead → get_user_data → update_user_data → validate_medicare_eligibility → classify_and_save_user',
+      onValidationFailure: 'After 3 failed Medicare validations → schedule_callback',
+      onQualified: 'After SALE disposition → transfer_call to extension 2002',
+      afterHours: 'Outside business hours (9am-5:45pm EST Mon-Fri) → schedule_callback',
+    },
+    dispositions: {
+      SALE: 'Qualified - Medicare validated, eligible for premium eyewear',
+      NQI: 'Not Qualified Insurance - Doesn\'t meet Medicare eligibility',
+      NI: 'Not Interested - Caller declined program',
+      NA: 'No Answer - No pickup or after-hours call',
+      AM: 'Answering Machine - Voicemail detected',
+      DC: 'Disconnected - Line disconnected or fax tone',
+      B: 'Busy - Line busy signal',
+      DAIR: 'Dead Air - 6+ seconds silence',
+    },
   });
 });
 

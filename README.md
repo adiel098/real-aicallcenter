@@ -127,7 +127,12 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
    - `check_lead` - Check if caller is in leads database
    - `get_user_data` - Retrieve Medicare member data
    - `update_user_data` - Update missing Medicare information
-   - `classify_and_save_user` - Classify eligibility, save result, and send VICI disposition (SIMPLIFIED 4-TOOL WORKFLOW)
+   - `validate_medicare_eligibility` - SSN → MBI → Insurance validation (3-attempt retry logic)
+   - `classify_and_save_user` - Classify eligibility, save result, and send VICI disposition
+   - `schedule_callback` - Schedule callback through VICI (for validation failures or after-hours)
+   - `transfer_call` - Transfer to human agent extension 2002 (after SALE disposition)
+
+   **COMPLETE 7-TOOL WORKFLOW**
 
 3. **Configure Server URL** for each tool:
    ```
@@ -154,29 +159,55 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
 5. **Set up the Assistant Prompt:**
 
    ```
-   You are a helpful medical screening assistant. Your job is to collect user information and determine their eligibility.
+   You are Alex, a friendly Medicare Premium Eyewear Program assistant. You help Medicare members determine their eligibility for specialized eyewear for colorblind individuals.
 
    IMPORTANT: The caller's phone number is available as {{customer.number}}.
 
-   Follow this flow:
-   1. Greet the caller warmly
-   2. Use check_lead tool with {{customer.number}} to see if they're in our system
-   3. Use get_user_data tool to retrieve their information
-   4. If data is incomplete, ask for missing information:
-      - Age
-      - Gender
-      - Height and weight
-      - Medical history
-      - Allergies
-      - Blood type
-      - Family medical history
-   5. Use update_user_data tool to save any information you collect
-   6. When all data is complete, use classify_user tool
-   7. Tell the user their classification result in a friendly, professional way
-   8. Use save_classification_result tool to record the final result
-   9. Thank the caller and end the call
+   **Complete Workflow:**
 
-   Be conversational, empathetic, and professional. Don't overwhelm the user with too many questions at once.
+   1. **Greet warmly:** "Hi, this is Alex from the Medicare Premium Eyewear Program! How can I help you today?"
+
+   2. **Check lead:** Use check_lead with {{customer.number}} to verify if caller is in system
+
+   3. **Get member data:** Use get_user_data to retrieve Medicare information
+
+   4. **Collect missing info** (if incomplete):
+      - Medicare plan level (Part A, B, C, D, Advantage)
+      - Colorblindness status (required - 40pts mandatory)
+      - Type of colorblindness (red-green, blue-yellow, total)
+      - Age (65+ gets 20pts)
+      - Current eyewear usage
+
+   5. **Update data:** Use update_user_data to save collected information
+
+   6. **Validate Medicare:** Use validate_medicare_eligibility tool:
+      - Ask for last 4 digits of SSN
+      - Ask for date of birth (YYYY-MM-DD)
+      - The tool will verify through Medicare APIs
+      - If validation fails, it will retry up to 3 times
+      - After 3 failures, use schedule_callback tool
+
+   7. **Classify eligibility:** Use classify_and_save_user (after Medicare validated)
+      - Scoring: Plan (20-40pts) + Colorblindness (40pts mandatory) + Age (10-20pts)
+      - Threshold: 80+ points = QUALIFIED
+      - QUALIFIED → SALE disposition sent to VICI automatically
+      - NOT_QUALIFIED → NQI disposition sent to VICI automatically
+
+   8. **Next steps:**
+      - If QUALIFIED: Use transfer_call to extension 2002 for enrollment
+      - If NOT_QUALIFIED: Explain result professionally
+      - If callback needed: Use schedule_callback with reason
+
+   9. **Close professionally:** Thank them for their time
+
+   **Business Hours:** 9:00am - 5:45pm EST, Monday-Friday
+   - After-hours calls: Politely explain hours and use schedule_callback
+
+   **Important Notes:**
+   - Colorblindness is MANDATORY (40 points required)
+   - Be empathetic and conversational
+   - Don't overwhelm with questions - ask one at a time
+   - Always explain why you need specific information
    ```
 
 6. **Set up Phone Number:**
@@ -309,9 +340,46 @@ Medicare members are classified based on:
 - 80+ points = QUALIFIED (eligible for premium eyewear subscription)
 - Below 80 points = NOT_QUALIFIED
 
-**VICI Integration:**
-- QUALIFIED members → SALE disposition sent to VICI dialer
-- NOT_QUALIFIED members → NQI disposition sent to VICI dialer
+**VICI Integration - All 8 Dispositions:**
+
+The system automatically sends dispositions to VICI dialer based on call outcomes:
+
+1. **SALE** - Qualified member (Medicare validated + 80+ eligibility score) → Transfers to extension 2002
+2. **NQI** - Not Qualified Insurance (doesn't meet Medicare eligibility requirements)
+3. **NI** - Not Interested (caller explicitly declines program)
+4. **NA** - No Answer (rings 30+ seconds without pickup OR after-hours call)
+5. **AM** - Answering Machine (voicemail detected)
+6. **DC** - Disconnected (line disconnected, fax tone, or network issue)
+7. **B** - Busy (busy signal or fast busy)
+8. **DAIR** - Dead Air (6+ seconds silence before first "hello")
+
+**Call Status Detection:**
+- Automatically detects voicemail, dead air, busy signals, fax tones, and disconnections
+- Sends appropriate disposition codes to VICI
+- No manual intervention required
+
+**Business Hours Enforcement:**
+- Hours: 9:00am - 5:45pm EST, Monday-Friday
+- After-hours calls automatically receive NA disposition
+- System suggests callback scheduling for after-hours callers
+
+**AI Agent Extensions:**
+- Assigns calls to available agent extensions: 8001-8006
+- Tracks agent availability and call distribution
+- Each call logs which agent extension handled it
+
+**Medicare Validation Workflow:**
+- Step 1: Collect SSN last 4 + date of birth
+- Step 2: Verify Medicare member via Medicare API → Get MBI
+- Step 3: Validate insurance coverage via Insurance API
+- Retry logic: Up to 3 attempts for API failures
+- After 3 failures: Offers callback scheduling through VICI
+
+**Callback Scheduling:**
+- Automatic callback scheduling via VICI API
+- Triggered by: validation failures, incomplete data, customer request, after-hours
+- Defaults to next business day at 10am EST
+- Tracked per call session
 
 ## 🔍 Logging
 
