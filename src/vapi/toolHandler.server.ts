@@ -95,13 +95,17 @@ app.use((req: Request, res: Response, next) => {
     server: 'vapi-handler',
   });
 
-  requestLogger.info(
-    {
-      method: req.method,
-      path: req.path,
-    },
-    'Incoming request'
-  );
+  // Suppress "Incoming request" logs for webhook endpoints to reduce noise
+  // Only log non-webhook requests (health checks, API endpoints, etc.)
+  if (req.path !== '/' && !req.path.startsWith('/api/vapi/events/')) {
+    requestLogger.info(
+      {
+        method: req.method,
+        path: req.path,
+      },
+      'Incoming request'
+    );
+  }
 
   (res as any).requestLogger = requestLogger;
   next();
