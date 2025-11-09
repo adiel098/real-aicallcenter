@@ -363,15 +363,25 @@
     </div>
 
     <script>
-        // Get URL parameters
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get('token');
-        const phone = urlParams.get('phone');
+        // Wait for DOM to be fully loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('token');
+            const phone = urlParams.get('phone');
 
-        // Pre-fill phone number
-        if (phone) {
-            document.getElementById('phoneNumber').value = phone;
-        }
+            // Pre-fill phone number (URLSearchParams automatically decodes %2B to +)
+            if (phone) {
+                const phoneField = document.getElementById('phoneNumber');
+                if (phoneField) {
+                    phoneField.value = decodeURIComponent(phone);
+                    console.log('Phone number pre-filled:', phone);
+                } else {
+                    console.error('Phone number field not found');
+                }
+            } else {
+                console.error('No phone parameter in URL');
+            }
 
         // Show/hide colorblind type field based on colorblindness selection
         const colorblindnessRadios = document.querySelectorAll('input[name="hasColorblindness"]');
@@ -507,6 +517,8 @@
         ssnInput.addEventListener('input', (e) => {
             e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
         });
+
+        }); // End of DOMContentLoaded
     </script>
 </body>
 </html>
