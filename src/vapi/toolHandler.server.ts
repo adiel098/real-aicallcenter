@@ -1557,10 +1557,16 @@ app.post('/api/vapi/events/call-started', (req: Request, res: Response) => {
     // Persist call to database
     try {
       const callState = callStateService.getCallSession(call.id);
+      // Map VAPI call types to database format
+      let callType: 'inbound' | 'outbound' = 'inbound';
+      if (call.type === 'outboundPhoneCall') {
+        callType = 'outbound';
+      }
+
       databaseService.insertCall({
         call_id: call.id,
         phone_number: call.customer?.number || call.phoneNumberFrom || '',
-        call_type: (call.type === 'inbound' || call.type === 'outbound') ? call.type : 'inbound',
+        call_type: callType,
         start_time: call.startedAt || timestamp,
         agent_extension: callState?.agentExtension,
         is_business_hours: callState?.withinBusinessHours,
@@ -1648,7 +1654,7 @@ app.post('/api/vapi/events/call-ended', (req: Request, res: Response) => {
       databaseService.updateCall(call.id, {
         end_time: call.endedAt || timestamp,
         duration_seconds: call.duration,
-        status: callState?.detectedStatus || call.status,
+        status: call.status,
         end_reason: call.endReason,
         transcript,
         summary,
