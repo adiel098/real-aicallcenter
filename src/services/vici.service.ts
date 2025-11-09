@@ -292,7 +292,9 @@ class ViciService {
 
   /**
    * Retry logic with exponential backoff
+   * NOTE: This method is deprecated - now using errorHandler.service.ts for retry logic
    */
+  // @ts-ignore - Unused method, kept for backwards compatibility
   private async callWithRetry<T>(
     apiFunction: () => Promise<T>,
     maxRetries: number = this.maxRetries

@@ -28,7 +28,7 @@ async function testSMSWorkflow() {
 
   // Step 2: Build form URL
   console.log('Step 2: Building form URL...');
-  const formUrl = buildFormUrl(LOCAL_URL, formToken.token, TEST_PHONE);
+  const formUrl = buildFormUrl(LOCAL_URL, formToken.token);
   console.log(`✓ Form URL: ${formUrl}`);
   console.log('');
 
