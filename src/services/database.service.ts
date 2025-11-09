@@ -18,6 +18,31 @@ export interface LeadRecord {
   updated_at?: string;
 }
 
+export interface UserDataRecord {
+  id?: number;
+  user_id: string;
+  phone_number: string;
+  name?: string;
+  medicare_data?: string; // JSON string of Medicare data object
+  eligibility_data?: string; // JSON string of eligibility data object
+  missing_fields?: string; // JSON string of missing fields array
+  last_updated?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ClassificationRecord {
+  id?: number;
+  classification_id: string;
+  user_id: string;
+  phone_number: string;
+  result: string; // 'QUALIFIED' or 'NOT_QUALIFIED'
+  score: number;
+  reason?: string;
+  factors?: string; // JSON string of factors object
+  created_at?: string;
+}
+
 export interface CallRecord {
   id?: number;
   call_id: string;
@@ -263,6 +288,147 @@ class DatabaseService {
   leadExists(phoneNumber: string): boolean {
     const lead = this.getLeadByPhone(phoneNumber);
     return lead !== null && lead !== undefined;
+  }
+
+  // ============= USER DATA =============
+
+  insertUserData(userData: UserDataRecord): number {
+    const stmt = this.db.prepare(`
+      INSERT INTO user_data (
+        user_id, phone_number, name, medicare_data, eligibility_data, missing_fields, last_updated
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      userData.user_id,
+      userData.phone_number,
+      userData.name || null,
+      userData.medicare_data || null,
+      userData.eligibility_data || null,
+      userData.missing_fields || null,
+      userData.last_updated || new Date().toISOString()
+    );
+
+    return result.lastInsertRowid as number;
+  }
+
+  getUserDataByPhone(phoneNumber: string): UserDataRecord | null {
+    const stmt = this.db.prepare('SELECT * FROM user_data WHERE phone_number = ? ORDER BY last_updated DESC LIMIT 1');
+    return stmt.get(phoneNumber) as UserDataRecord | null;
+  }
+
+  getUserDataById(userId: string): UserDataRecord | null {
+    const stmt = this.db.prepare('SELECT * FROM user_data WHERE user_id = ?');
+    return stmt.get(userId) as UserDataRecord | null;
+  }
+
+  getUserDataByMedicareNumber(medicareNumber: string): UserDataRecord | null {
+    // Search in JSON medicare_data field
+    const stmt = this.db.prepare(`
+      SELECT * FROM user_data
+      WHERE medicare_data IS NOT NULL
+      AND medicare_data LIKE ?
+    `);
+    return stmt.get(`%"medicareNumber":"${medicareNumber}"%`) as UserDataRecord | null;
+  }
+
+  getAllUserData(limit = 100, offset = 0): UserDataRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM user_data ORDER BY last_updated DESC LIMIT ? OFFSET ?
+    `);
+    return stmt.all(limit, offset) as UserDataRecord[];
+  }
+
+  updateUserData(userId: string, updates: Partial<UserDataRecord>): void {
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (updates.name !== undefined) {
+      fields.push('name = ?');
+      values.push(updates.name);
+    }
+    if (updates.medicare_data !== undefined) {
+      fields.push('medicare_data = ?');
+      values.push(updates.medicare_data);
+    }
+    if (updates.eligibility_data !== undefined) {
+      fields.push('eligibility_data = ?');
+      values.push(updates.eligibility_data);
+    }
+    if (updates.missing_fields !== undefined) {
+      fields.push('missing_fields = ?');
+      values.push(updates.missing_fields);
+    }
+    if (updates.last_updated !== undefined) {
+      fields.push('last_updated = ?');
+      values.push(updates.last_updated);
+    }
+
+    if (fields.length === 0) return;
+
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(userId);
+
+    const stmt = this.db.prepare(`
+      UPDATE user_data SET ${fields.join(', ')} WHERE user_id = ?
+    `);
+
+    stmt.run(...values);
+  }
+
+  deleteUserData(userId: string): void {
+    const stmt = this.db.prepare('DELETE FROM user_data WHERE user_id = ?');
+    stmt.run(userId);
+  }
+
+  userDataExists(phoneNumber: string): boolean {
+    return this.getUserDataByPhone(phoneNumber) !== null;
+  }
+
+  // ============= CLASSIFICATIONS =============
+
+  insertClassification(classification: ClassificationRecord): number {
+    const stmt = this.db.prepare(`
+      INSERT INTO classifications (
+        classification_id, user_id, phone_number, result, score, reason, factors
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      classification.classification_id,
+      classification.user_id,
+      classification.phone_number,
+      classification.result,
+      classification.score,
+      classification.reason || null,
+      classification.factors || null
+    );
+
+    return result.lastInsertRowid as number;
+  }
+
+  getClassificationByUserId(userId: string): ClassificationRecord | null {
+    const stmt = this.db.prepare('SELECT * FROM classifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 1');
+    return stmt.get(userId) as ClassificationRecord | null;
+  }
+
+  getAllClassifications(limit = 100, offset = 0): ClassificationRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM classifications ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `);
+    return stmt.all(limit, offset) as ClassificationRecord[];
+  }
+
+  getClassificationsByResult(result: string, limit = 100, offset = 0): ClassificationRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM classifications WHERE result = ? ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `);
+    return stmt.all(result, limit, offset) as ClassificationRecord[];
+  }
+
+  deleteClassification(classificationId: string): void {
+    const stmt = this.db.prepare('DELETE FROM classifications WHERE classification_id = ?');
+    stmt.run(classificationId);
   }
 
   // ============= CALL RECORDS =============

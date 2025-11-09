@@ -10,18 +10,10 @@ import cors from 'cors';
 import helmet from 'helmet';
 import logger from '../config/logger';
 import { PORTS, HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../config/constants';
-import {
-  userDataDatabase,
-  findUserDataByPhoneNumber,
-  findUserDataByMedicareNumber,
-  findUserDataByNameAndDOB,
-  updateUserData,
-  isUserDataComplete,
-  createUserData,
-  userExists,
-} from '../data/userData.data';
+import { userDataDatabase, isUserDataComplete } from '../data/userData.data';
 import { normalizePhoneNumber, isValidPhoneNumber, maskPhoneNumber } from '../utils/phoneNumber.util';
-import { UserDataResponse, UserDataUpdateRequest } from '../types/userData.types';
+import { UserDataResponse, UserDataUpdateRequest, UserData } from '../types/userData.types';
+import databaseService, { UserDataRecord } from '../services/database.service';
 
 // Initialize Express app
 const app = express();
@@ -30,6 +22,57 @@ const app = express();
 app.use(helmet()); // Security headers
 app.use(cors()); // Enable CORS for all origins
 app.use(express.json()); // Parse JSON request bodies
+
+/**
+ * Migrate in-memory user data to database on startup
+ */
+function migrateUserDataToDatabase() {
+  logger.info({ count: userDataDatabase.length }, 'Migrating in-memory user data to database');
+
+  let migrated = 0;
+  let skipped = 0;
+
+  for (const userData of userDataDatabase) {
+    try {
+      if (databaseService.userDataExists(userData.phoneNumber)) {
+        skipped++;
+        continue;
+      }
+
+      const userDataRecord: UserDataRecord = {
+        user_id: userData.userId,
+        phone_number: userData.phoneNumber,
+        name: userData.name,
+        medicare_data: JSON.stringify(userData.medicareData),
+        eligibility_data: userData.eligibilityData ? JSON.stringify(userData.eligibilityData) : undefined,
+        missing_fields: userData.missingFields ? JSON.stringify(userData.missingFields) : undefined,
+        last_updated: userData.lastUpdated,
+      };
+
+      databaseService.insertUserData(userDataRecord);
+      migrated++;
+    } catch (error: any) {
+      logger.error({ error: error.message, userId: userData.userId }, 'Failed to migrate user data');
+    }
+  }
+
+  logger.info({ migrated, skipped }, `User data migration complete: ${migrated} migrated, ${skipped} skipped`);
+}
+
+/**
+ * Convert UserDataRecord from database to UserData type
+ */
+function convertUserDataRecordToUserData(record: UserDataRecord): UserData {
+  return {
+    userId: record.user_id,
+    phoneNumber: record.phone_number,
+    name: record.name || undefined,
+    medicareData: record.medicare_data ? JSON.parse(record.medicare_data) : {},
+    eligibilityData: record.eligibility_data ? JSON.parse(record.eligibility_data) : undefined,
+    missingFields: record.missing_fields ? JSON.parse(record.missing_fields) : undefined,
+    lastUpdated: record.last_updated || new Date().toISOString(),
+  };
+}
 
 /**
  * Request logging middleware
@@ -91,9 +134,9 @@ app.get('/api/users/:phoneNumber', (req: Request, res: Response) => {
   const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
   // Search for user data in database
-  const userData = findUserDataByPhoneNumber(normalizedPhone);
+  const userDataRecord = databaseService.getUserDataByPhone(normalizedPhone);
 
-  if (!userData) {
+  if (!userDataRecord) {
     requestLogger.info({ phoneNumber: maskPhoneNumber(normalizedPhone) }, 'User data not found');
 
     const response: UserDataResponse = {
@@ -107,9 +150,12 @@ app.get('/api/users/:phoneNumber', (req: Request, res: Response) => {
     return res.status(HTTP_STATUS.NOT_FOUND).json(response);
   }
 
+  // Convert to UserData type
+  const userData = convertUserDataRecordToUserData(userDataRecord);
+
   // Check if data is complete
   const complete = isUserDataComplete(userData);
-  const missing = userData.missingFields;
+  const missing = userData.missingFields || [];
 
   // User data found
   requestLogger.info(

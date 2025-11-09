@@ -17,6 +17,36 @@ CREATE TABLE IF NOT EXISTS leads (
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- User Data Table
+-- Stores Medicare member data collected during calls
+CREATE TABLE IF NOT EXISTS user_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT UNIQUE NOT NULL,
+    phone_number TEXT NOT NULL,
+    name TEXT,
+    medicare_data TEXT, -- JSON object with Medicare info (age, city, medicareNumber, planLevel, hasColorblindness, etc.)
+    eligibility_data TEXT, -- JSON object with eligibility results
+    missing_fields TEXT, -- JSON array of missing required fields
+    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Classifications Table
+-- Stores Medicare eligibility classification results
+CREATE TABLE IF NOT EXISTS classifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    classification_id TEXT UNIQUE NOT NULL,
+    user_id TEXT NOT NULL,
+    phone_number TEXT NOT NULL,
+    result TEXT NOT NULL, -- 'QUALIFIED' or 'NOT_QUALIFIED'
+    score INTEGER NOT NULL,
+    reason TEXT,
+    factors TEXT, -- JSON object with classification factors
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES user_data(user_id) ON DELETE CASCADE
+);
+
 -- Call Records Table
 -- Stores complete VAPI call information
 CREATE TABLE IF NOT EXISTS calls (
@@ -146,6 +176,11 @@ CREATE TABLE IF NOT EXISTS error_logs (
 CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone_number);
 CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
 CREATE INDEX IF NOT EXISTS idx_leads_lead_id ON leads(lead_id);
+CREATE INDEX IF NOT EXISTS idx_user_data_phone ON user_data(phone_number);
+CREATE INDEX IF NOT EXISTS idx_user_data_user_id ON user_data(user_id);
+CREATE INDEX IF NOT EXISTS idx_classifications_user_id ON classifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_classifications_phone ON classifications(phone_number);
+CREATE INDEX IF NOT EXISTS idx_classifications_result ON classifications(result);
 CREATE INDEX IF NOT EXISTS idx_calls_phone ON calls(phone_number);
 CREATE INDEX IF NOT EXISTS idx_calls_start_time ON calls(start_time);
 CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(status);
