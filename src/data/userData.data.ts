@@ -14,7 +14,7 @@ import { UserData } from '../types/userData.types';
 export const userDataDatabase: UserData[] = [
   {
     userId: 'lead-001', // John Smith - Complete data, QUALIFIED
-    phoneNumber: '+12025551001',
+    phoneNumber: '+972501234001',
     name: 'John Smith',
     medicareData: {
       age: 68,
@@ -39,7 +39,7 @@ export const userDataDatabase: UserData[] = [
   },
   {
     userId: 'lead-002', // Sarah Johnson - Complete data, QUALIFIED
-    phoneNumber: '+12025551002',
+    phoneNumber: '+972501234002',
     name: 'Sarah Johnson',
     medicareData: {
       age: 72,
@@ -64,7 +64,7 @@ export const userDataDatabase: UserData[] = [
   },
   {
     userId: 'lead-003', // Michael Chen - INCOMPLETE DATA
-    phoneNumber: '+12025551003',
+    phoneNumber: '+972501234003',
     name: 'Michael Chen',
     medicareData: {
       age: 66,
@@ -85,7 +85,7 @@ export const userDataDatabase: UserData[] = [
   },
   {
     userId: 'lead-004', // Emily Davis - INCOMPLETE (missing MBI)
-    phoneNumber: '+12025551004',
+    phoneNumber: '+972501234004',
     name: 'Emily Davis',
     medicareData: {
       age: 70,

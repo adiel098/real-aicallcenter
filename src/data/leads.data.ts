@@ -14,7 +14,7 @@ import { Lead } from '../types/lead.types';
 export const leadsDatabase: Lead[] = [
   {
     leadId: 'lead-001',
-    phoneNumber: '+12025551001',
+    phoneNumber: '+972501234001',
     name: 'John Smith',
     email: 'john.smith@example.com',
     city: 'Washington',
@@ -24,7 +24,7 @@ export const leadsDatabase: Lead[] = [
   },
   {
     leadId: 'lead-002',
-    phoneNumber: '+12025551002',
+    phoneNumber: '+972501234002',
     name: 'Sarah Johnson',
     email: 'sarah.johnson@example.com',
     city: 'Baltimore',
@@ -34,7 +34,7 @@ export const leadsDatabase: Lead[] = [
   },
   {
     leadId: 'lead-003',
-    phoneNumber: '+12025551003',
+    phoneNumber: '+972501234003',
     name: 'Michael Chen',
     email: 'michael.chen@example.com',
     city: 'Arlington',
@@ -44,7 +44,7 @@ export const leadsDatabase: Lead[] = [
   },
   {
     leadId: 'lead-004',
-    phoneNumber: '+12025551004',
+    phoneNumber: '+972501234004',
     name: 'Emily Davis',
     email: 'emily.davis@example.com',
     city: 'Alexandria',
@@ -54,7 +54,7 @@ export const leadsDatabase: Lead[] = [
   },
   {
     leadId: 'lead-005',
-    phoneNumber: '+12025551005',
+    phoneNumber: '+972501234005',
     name: 'David Wilson',
     email: 'david.wilson@example.com',
     city: 'Silver Spring',
@@ -64,7 +64,7 @@ export const leadsDatabase: Lead[] = [
   },
   {
     leadId: 'lead-006',
-    phoneNumber: '+12025551006',
+    phoneNumber: '+972501234006',
     name: 'Lisa Anderson',
     email: 'lisa.anderson@example.com',
     city: 'Bethesda',
@@ -74,7 +74,7 @@ export const leadsDatabase: Lead[] = [
   },
   {
     leadId: 'lead-007',
-    phoneNumber: '+12025551007',
+    phoneNumber: '+972501234007',
     name: 'James Martinez',
     email: 'james.martinez@example.com',
     city: 'Rockville',
@@ -84,7 +84,7 @@ export const leadsDatabase: Lead[] = [
   },
   {
     leadId: 'lead-008',
-    phoneNumber: '+12025551008',
+    phoneNumber: '+972501234008',
     name: 'Jennifer Taylor',
     email: 'jennifer.taylor@example.com',
     city: 'Frederick',
