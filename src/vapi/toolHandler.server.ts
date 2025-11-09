@@ -139,8 +139,8 @@ app.post('/', async (req: Request, res: Response) => {
     // Create logger with call context
     const eventLogger = createChildLogger({
       callId: call?.id,
-      customerNumber: call?.customer?.number ? maskPhoneNumber(call.customer.number) :
-                      call?.phoneNumberFrom ? maskPhoneNumber(call.phoneNumberFrom) : 'unknown',
+      customerNumber: call?.customer?.number ? maskPhoneNumber(call?.customer?.number) :
+                      call?.phoneNumberFrom ? maskPhoneNumber(call?.phoneNumberFrom) : 'unknown',
       event: messageType,
     });
 
@@ -2099,7 +2099,9 @@ app.post('/api/form-submission', async (req: Request, res: Response) => {
     // Map form data to medicareData structure
     if (formData.age) medicareData.age = formData.age;
     if (formData.city) medicareData.city = formData.city;
+    if (formData.dateOfBirth) medicareData.dateOfBirth = formData.dateOfBirth;
     if (formData.medicareNumber) medicareData.medicareNumber = formData.medicareNumber;
+    if (formData.ssnLast4) medicareData.ssnLast4 = formData.ssnLast4;
     if (formData.planLevel) medicareData.planLevel = formData.planLevel;
     if (formData.hasColorblindness !== undefined) {
       medicareData.hasColorblindness = formData.hasColorblindness;
