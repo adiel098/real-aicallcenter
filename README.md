@@ -1,15 +1,16 @@
 # VAPI Voice Agent with Mock CRM Integration
 
-A comprehensive voice agent system built with VAPI that integrates with mock CRM servers to handle inbound calls, collect user information, and classify users based on bio and genetic data.
+A comprehensive voice agent system built with VAPI that integrates with mock CRM servers and VICI dialer to handle inbound calls, verify Medicare eligibility, and classify members for premium eyewear subscription.
 
 ## 🏗️ Architecture
 
-The system consists of 4 main components:
+The system consists of 5 main components:
 
 1. **Lead CRM Server** (Port 3001) - Manages lead information and phone number lookup
-2. **User Data CRM Server** (Port 3002) - Stores and updates user bio/genetic data
-3. **Classification CRM Server** (Port 3003) - Classifies users as ACCEPTABLE/NOT_ACCEPTABLE
-4. **VAPI Tool Handler** (Port 3000) - Webhook endpoint for VAPI tool calls
+2. **User Data CRM Server** (Port 3002) - Stores and updates Medicare member data
+3. **Classification CRM Server** (Port 3003) - Classifies users as QUALIFIED/NOT_QUALIFIED for premium eyewear
+4. **VICI Mock Server** (Port 3004) - Simulates VICI dialer for call dispositions and callbacks
+5. **VAPI Tool Handler** (Port 3000) - Webhook endpoint for VAPI tool calls
 
 ## 📁 Project Structure
 
@@ -78,11 +79,12 @@ homework2/
    npm run dev:all
    ```
 
-   This will start all 4 servers concurrently:
+   This will start all 5 servers concurrently:
    - VAPI Tool Handler: http://localhost:3000
    - Lead CRM: http://localhost:3001
    - User Data CRM: http://localhost:3002
    - Classification CRM: http://localhost:3003
+   - VICI Mock Server: http://localhost:3004
 
 ### Running Individual Servers
 
@@ -92,6 +94,7 @@ You can also run servers individually for testing:
 npm run dev:lead-crm           # Lead CRM only
 npm run dev:userdata-crm       # User Data CRM only
 npm run dev:classification-crm # Classification CRM only
+npm run dev:vici               # VICI Mock Server only
 npm run dev:vapi-handler       # VAPI handler only
 ```
 
@@ -122,17 +125,33 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
 2. **Add the following tools** to your assistant (copy from `/api/vapi/tools` endpoint):
 
    - `check_lead` - Check if caller is in leads database
-   - `get_user_data` - Retrieve user bio/genetic data
-   - `update_user_data` - Update missing user information
-   - `classify_user` - Classify user as ACCEPTABLE/NOT_ACCEPTABLE
-   - `save_classification_result` - Save classification result
+   - `get_user_data` - Retrieve Medicare member data
+   - `update_user_data` - Update missing Medicare information
+   - `classify_and_save_user` - Classify eligibility, save result, and send VICI disposition (SIMPLIFIED 4-TOOL WORKFLOW)
 
 3. **Configure Server URL** for each tool:
    ```
    https://your-ngrok-url.ngrok.io/api/vapi/tool-calls
    ```
 
-4. **Set up the Assistant Prompt:**
+4. **Configure Event Webhooks** (for real-time call logging):
+
+   In the VAPI Dashboard, under Server Messages, add the following webhook endpoints:
+
+   - **Call Started**: `https://your-ngrok-url.ngrok.io/api/vapi/events/call-started`
+   - **Call Ended**: `https://your-ngrok-url.ngrok.io/api/vapi/events/call-ended`
+   - **Message**: `https://your-ngrok-url.ngrok.io/api/vapi/events/message`
+   - **Speech Interrupted**: `https://your-ngrok-url.ngrok.io/api/vapi/events/speech-interrupted`
+   - **Hang**: `https://your-ngrok-url.ngrok.io/api/vapi/events/hang`
+
+   This enables real-time logging of:
+   - 📞 When calls start (with caller phone number and call type)
+   - 👤 What the user says during the conversation
+   - 🤖 What the assistant responds
+   - ⚠️  When the user interrupts the assistant
+   - 📴 When calls end (with duration, reason, and statistics)
+
+5. **Set up the Assistant Prompt:**
 
    ```
    You are a helpful medical screening assistant. Your job is to collect user information and determine their eligibility.
@@ -160,13 +179,22 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
    Be conversational, empathetic, and professional. Don't overwhelm the user with too many questions at once.
    ```
 
-5. **Set up Phone Number:**
+6. **Set up Phone Number:**
    - Get a phone number in VAPI dashboard
    - Assign your assistant to this number
 
 ### Step 4: Test Your System
 
 Call the VAPI phone number and the flow will execute automatically!
+
+**Viewing Call Logs:**
+When you make a call, your terminal will display real-time logs showing:
+- Call start with phone numbers and call type
+- Each message exchanged between user and assistant
+- Tool executions (check_lead, get_user_data, etc.)
+- Classification results
+- VICI disposition sending
+- Call end with duration and statistics
 
 ## 📊 Call Flow
 
@@ -207,10 +235,10 @@ curl http://localhost:3002/api/users
 # Get specific user data
 curl http://localhost:3002/api/users/+12025551001
 
-# Update user data
-curl -X PUT http://localhost:3002/api/users/+12025551003 \
+# Update Medicare member data
+curl -X PUT http://localhost:3002/api/users/+972501234003 \
   -H "Content-Type: application/json" \
-  -d '{"bioData": {"height": 175, "weight": 70}}'
+  -d '{"medicareData": {"planLevel": "Advantage", "hasColorblindness": true, "colorblindType": "red-green (deuteranopia)"}}'
 ```
 
 ### Test Classification CRM
@@ -271,16 +299,19 @@ The system comes with 8 pre-configured leads:
 
 ### Classification Criteria
 
-Users are classified based on:
+Medicare members are classified based on:
 
-- **Age**: 18-65 preferred range
-- **Medical History**: Fewer conditions = better score
-- **Genetic Conditions**: Affects score negatively
-- **Family History**: Hereditary risks considered
+- **Medicare Plan Level**: Advantage and Plan C provide best coverage (40 points), Plan B good coverage (30 points), Plans A/D limited coverage (20 points)
+- **Colorblindness Diagnosis**: REQUIRED - Must have confirmed colorblindness diagnosis (40 points). Without this, automatically NOT_QUALIFIED
+- **Age**: 65+ meets Medicare eligibility (20 points), under 65 may qualify through disability (10 points)
 
 **Classification Score:**
-- 60+ = ACCEPTABLE
-- Below 60 = NOT_ACCEPTABLE
+- 80+ points = QUALIFIED (eligible for premium eyewear subscription)
+- Below 80 points = NOT_QUALIFIED
+
+**VICI Integration:**
+- QUALIFIED members → SALE disposition sent to VICI dialer
+- NOT_QUALIFIED members → NQI disposition sent to VICI dialer
 
 ## 🔍 Logging
 

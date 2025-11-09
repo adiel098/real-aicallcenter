@@ -41,8 +41,8 @@ Navigate to: **http://localhost:3000**
 - 🎯 Click any item for detailed view
 
 ### Color Coding
-- 🟢 **Green**: Acceptable / Complete / Success
-- 🔴 **Red**: Not Acceptable / Low Score
+- 🟢 **Green**: Qualified / Complete / Success
+- 🔴 **Red**: Not Qualified / Low Score
 - 🟡 **Yellow**: Incomplete / Warning
 - 🔵 **Blue**: Info / Actions
 

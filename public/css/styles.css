@@ -319,11 +319,11 @@ body {
     overflow: hidden;
 }
 
-.chart-bar.acceptable {
+.chart-bar.qualified {
     background: linear-gradient(to top, var(--success-color), #6ee7b7);
 }
 
-.chart-bar.not-acceptable {
+.chart-bar.not-qualified {
     background: linear-gradient(to top, var(--danger-color), #fca5a5);
 }
 
@@ -556,11 +556,11 @@ body {
     border-left: 4px solid var(--border-color);
 }
 
-.classification-card.acceptable {
+.classification-card.qualified {
     border-left-color: var(--success-color);
 }
 
-.classification-card.not-acceptable {
+.classification-card.not-qualified {
     border-left-color: var(--danger-color);
 }
 

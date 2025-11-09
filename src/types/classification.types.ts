@@ -27,7 +27,7 @@ export interface Classification {
   /** Classification result */
   result: ClassificationResult;
 
-  /** Score (0-100) - higher means more acceptable */
+  /** Score (0-100) - higher means more qualified */
   score: number;
 
   /** Detailed reason for the classification */

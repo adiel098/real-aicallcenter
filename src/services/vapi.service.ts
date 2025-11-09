@@ -353,7 +353,7 @@ export const classifyUser = async (userData: any): Promise<ClassificationRespons
  *
  * @param userId - User ID
  * @param phoneNumber - User phone number
- * @param result - Classification result (ACCEPTABLE/NOT_ACCEPTABLE)
+ * @param result - Classification result (QUALIFIED/NOT_QUALIFIED)
  * @param score - Classification score
  * @param reason - Reason for classification
  * @returns Success response
@@ -361,7 +361,7 @@ export const classifyUser = async (userData: any): Promise<ClassificationRespons
 export const saveClassificationResult = async (
   userId: string,
   phoneNumber: string,
-  result: 'ACCEPTABLE' | 'NOT_ACCEPTABLE',
+  result: 'QUALIFIED' | 'NOT_QUALIFIED',
   score: number,
   reason: string
 ): Promise<{ success: boolean; message?: string }> => {
@@ -451,28 +451,20 @@ export const saveClassificationResult = async (
  */
 export const sendVICIDisposition = async (
   phoneNumber: string,
-  classificationResult: 'QUALIFIED' | 'NOT_QUALIFIED' | 'ACCEPTABLE' | 'NOT_ACCEPTABLE',
+  classificationResult: 'QUALIFIED' | 'NOT_QUALIFIED',
   score: number,
   reason: string
 ): Promise<{ disposition: string; dispositionId: string; timestamp: string }> => {
   // Import VICI service
   const { viciService } = await import('./vici.service');
 
-  // Normalize classification result (handle legacy aliases)
-  const normalizedResult =
-    classificationResult === 'ACCEPTABLE'
-      ? 'QUALIFIED'
-      : classificationResult === 'NOT_ACCEPTABLE'
-        ? 'NOT_QUALIFIED'
-        : classificationResult;
-
   // Map classification to VICI disposition
-  const disposition = viciService.mapClassificationToDisposition(normalizedResult);
+  const disposition = viciService.mapClassificationToDisposition(classificationResult);
 
   logger.info(
     {
       phoneNumber: maskPhoneNumber(phoneNumber),
-      classificationResult: normalizedResult,
+      classificationResult,
       disposition,
       score,
       action: 'sendVICIDisposition',
@@ -483,7 +475,7 @@ export const sendVICIDisposition = async (
   try {
     const viciResponse = await viciService.sendDisposition(phoneNumber, disposition, {
       eligibilityScore: score,
-      classificationResult: normalizedResult,
+      classificationResult,
       mbiValidated: true, // Assume MBI validated if classification completed
       reason,
     });

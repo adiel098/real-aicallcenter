@@ -129,3 +129,151 @@ export interface SaveClassificationResultArgs {
   score: number;
   reason: string;
 }
+
+/**
+ * VAPI Call Event Types
+ *
+ * Types for VAPI webhook events (call lifecycle and conversation)
+ */
+
+/** Call object shared across all events */
+export interface VAPICall {
+  /** Unique call ID */
+  id: string;
+
+  /** Call type */
+  type?: 'inboundPhoneCall' | 'outboundPhoneCall' | 'webCall';
+
+  /** Call status */
+  status?: 'queued' | 'ringing' | 'in-progress' | 'forwarding' | 'ended';
+
+  /** Phone number the call is from */
+  phoneNumberFrom?: string;
+
+  /** Phone number the call is to */
+  phoneNumberTo?: string;
+
+  /** Customer information */
+  customer?: {
+    number?: string;
+    name?: string;
+    extension?: string;
+  };
+
+  /** Call started timestamp */
+  startedAt?: string;
+
+  /** Call ended timestamp */
+  endedAt?: string;
+
+  /** Call duration in seconds */
+  duration?: number;
+
+  /** End reason */
+  endReason?: 'customer-ended-call' | 'assistant-ended-call' | 'customer-did-not-answer' |
+              'assistant-forwarded-call' | 'voicemail' | 'phone-call-provider-closed-websocket';
+}
+
+/** Conversation message object */
+export interface VAPIConversationMessage {
+  /** Message role */
+  role: 'system' | 'user' | 'assistant' | 'tool' | 'function';
+
+  /** Message content/text */
+  content?: string;
+
+  /** Message timestamp */
+  time?: number;
+
+  /** Timestamp in ISO format */
+  timestamp?: string;
+
+  /** Message type (for assistant messages) */
+  type?: 'request' | 'response';
+
+  /** Tool calls (if any) */
+  toolCalls?: VAPIToolCall[];
+
+  /** Tool call ID (for tool response messages) */
+  toolCallId?: string;
+
+  /** Duration in ms (for assistant responses) */
+  duration?: number;
+}
+
+/** Call Started Event */
+export interface VAPICallStartedEvent {
+  /** Event type */
+  type: 'call.started';
+
+  /** Call object */
+  call: VAPICall;
+
+  /** Event timestamp */
+  timestamp: string;
+}
+
+/** Call Ended Event */
+export interface VAPICallEndedEvent {
+  /** Event type */
+  type: 'call.ended';
+
+  /** Call object with end details */
+  call: VAPICall;
+
+  /** Event timestamp */
+  timestamp: string;
+
+  /** Call summary */
+  summary?: string;
+
+  /** Messages from the conversation */
+  messages?: VAPIConversationMessage[];
+}
+
+/** Message Event (conversation turn) */
+export interface VAPIMessageEvent {
+  /** Event type */
+  type: 'message';
+
+  /** Call object */
+  call: VAPICall;
+
+  /** The message */
+  message: VAPIConversationMessage;
+
+  /** Event timestamp */
+  timestamp: string;
+}
+
+/** Speech Interrupted Event */
+export interface VAPISpeechInterruptedEvent {
+  /** Event type */
+  type: 'speech-interrupted';
+
+  /** Call object */
+  call: VAPICall;
+
+  /** Event timestamp */
+  timestamp: string;
+}
+
+/** Hang Event */
+export interface VAPIHangEvent {
+  /** Event type */
+  type: 'hang';
+
+  /** Call object */
+  call: VAPICall;
+
+  /** Event timestamp */
+  timestamp: string;
+}
+
+/** Union type for all VAPI events */
+export type VAPIEvent =
+  | VAPICallStartedEvent
+  | VAPICallEndedEvent
+  | VAPIMessageEvent
+  | VAPISpeechInterruptedEvent
+  | VAPIHangEvent;

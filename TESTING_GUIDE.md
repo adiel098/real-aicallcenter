@@ -46,7 +46,7 @@ Copy the HTTPS URL (e.g., `https://abc123.ngrok-free.app`)
 2. Finds lead in system
 3. Retrieves existing complete data
 4. Proceeds directly to classification
-5. Returns ACCEPTABLE (score ≥ 60)
+5. Returns QUALIFIED (score ≥ 60)
 6. Disposition: SALE
 
 **What to observe:**
@@ -201,7 +201,7 @@ Open browser: http://localhost:3000
 
 4. **Classifications Tab**
    - View all classification results
-   - Filter by ACCEPTABLE/NOT_ACCEPTABLE
+   - Filter by QUALIFIED/NOT_QUALIFIED
    - See scores and reasoning
    - Export functionality
 
@@ -362,7 +362,7 @@ When a call comes in, you should see:
 [INFO] Tool: get_user_data - phoneNumber: ****1001
 [INFO] User data retrieved - complete: true
 [INFO] Tool: classify_and_save_user - phoneNumber: ****1001
-[INFO] Classification: ACCEPTABLE - score: 72
+[INFO] Classification: QUALIFIED - score: 72
 [INFO] Classification saved - resultId: ...
 ```
 

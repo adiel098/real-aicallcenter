@@ -26,9 +26,6 @@ export const API_URLS = {
 export const CLASSIFICATION = {
   QUALIFIED: 'QUALIFIED',
   NOT_QUALIFIED: 'NOT_QUALIFIED',
-  // Legacy aliases for backwards compatibility
-  ACCEPTABLE: 'QUALIFIED',
-  NOT_ACCEPTABLE: 'NOT_QUALIFIED',
 } as const;
 
 // VICI Dispositions (per AlexAI_Workflow_Full_Detailed.md)

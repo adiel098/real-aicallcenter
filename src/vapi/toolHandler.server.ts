@@ -21,6 +21,11 @@ import {
   UpdateUserDataArgs,
   ClassifyUserArgs,
   SaveClassificationResultArgs,
+  VAPICallStartedEvent,
+  VAPICallEndedEvent,
+  VAPIMessageEvent,
+  VAPISpeechInterruptedEvent,
+  VAPIHangEvent,
 } from '../types/vapi.types';
 import * as vapiService from '../services/vapi.service';
 import { maskPhoneNumber } from '../utils/phoneNumber.util';
@@ -640,6 +645,220 @@ app.post('/api/vapi/tool-calls', async (req: Request, res: Response) => {
 });
 
 /**
+ * VAPI Event Webhook Handlers
+ * These endpoints receive real-time call events from VAPI
+ */
+
+/**
+ * POST /api/vapi/events/call-started
+ * Called when a new call begins
+ */
+app.post('/api/vapi/events/call-started', (req: Request, res: Response) => {
+  try {
+    const event: VAPICallStartedEvent = req.body;
+    const { call, timestamp } = event;
+
+    const eventLogger = createChildLogger({
+      callId: call.id,
+      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom),
+      event: 'CALL_STARTED',
+    });
+
+    eventLogger.info(
+      {
+        callType: call.type,
+        status: call.status,
+        phoneFrom: call.phoneNumberFrom,
+        phoneTo: call.phoneNumberTo,
+        startedAt: call.startedAt || timestamp,
+      },
+      '📞 CALL STARTED'
+    );
+
+    res.status(HTTP_STATUS.OK).send();
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error processing call.started event');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to process event' });
+  }
+});
+
+/**
+ * POST /api/vapi/events/call-ended
+ * Called when a call completes
+ */
+app.post('/api/vapi/events/call-ended', (req: Request, res: Response) => {
+  try {
+    const event: VAPICallEndedEvent = req.body;
+    const { call, timestamp, summary, messages } = event;
+
+    const eventLogger = createChildLogger({
+      callId: call.id,
+      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom),
+      event: 'CALL_ENDED',
+    });
+
+    eventLogger.info(
+      {
+        callType: call.type,
+        status: call.status,
+        duration: call.duration,
+        endReason: call.endReason,
+        endedAt: call.endedAt || timestamp,
+        messageCount: messages?.length || 0,
+      },
+      `📴 CALL ENDED - Duration: ${call.duration}s - Reason: ${call.endReason}`
+    );
+
+    // Log call summary if available
+    if (summary) {
+      eventLogger.info({ summary }, 'Call summary');
+    }
+
+    // Log conversation statistics
+    if (messages && messages.length > 0) {
+      const userMessages = messages.filter((m) => m.role === 'user').length;
+      const assistantMessages = messages.filter((m) => m.role === 'assistant').length;
+      const toolCalls = messages.filter((m) => m.toolCalls && m.toolCalls.length > 0).length;
+
+      eventLogger.info(
+        {
+          totalMessages: messages.length,
+          userMessages,
+          assistantMessages,
+          toolCalls,
+        },
+        'Conversation statistics'
+      );
+    }
+
+    res.status(HTTP_STATUS.OK).send();
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error processing call.ended event');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to process event' });
+  }
+});
+
+/**
+ * POST /api/vapi/events/message
+ * Called for each conversation turn (user says something or assistant responds)
+ */
+app.post('/api/vapi/events/message', (req: Request, res: Response) => {
+  try {
+    const event: VAPIMessageEvent = req.body;
+    const { call, message, timestamp } = event;
+
+    const eventLogger = createChildLogger({
+      callId: call.id,
+      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom),
+      event: 'MESSAGE',
+    });
+
+    // Format message for logging based on role
+    if (message.role === 'user') {
+      eventLogger.info(
+        {
+          role: message.role,
+          content: message.content,
+          timestamp: message.timestamp || timestamp,
+        },
+        `👤 USER SAID: "${message.content}"`
+      );
+    } else if (message.role === 'assistant') {
+      eventLogger.info(
+        {
+          role: message.role,
+          content: message.content,
+          timestamp: message.timestamp || timestamp,
+          duration: message.duration,
+        },
+        `🤖 ASSISTANT SAID: "${message.content}"`
+      );
+    } else if (message.role === 'tool') {
+      eventLogger.info(
+        {
+          role: message.role,
+          toolCallId: message.toolCallId,
+          timestamp: message.timestamp || timestamp,
+        },
+        '🔧 TOOL RESPONSE'
+      );
+    } else {
+      eventLogger.info(
+        {
+          role: message.role,
+          content: message.content,
+          timestamp: message.timestamp || timestamp,
+        },
+        `💬 MESSAGE (${message.role})`
+      );
+    }
+
+    res.status(HTTP_STATUS.OK).send();
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error processing message event');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to process event' });
+  }
+});
+
+/**
+ * POST /api/vapi/events/speech-interrupted
+ * Called when user interrupts the assistant
+ */
+app.post('/api/vapi/events/speech-interrupted', (req: Request, res: Response) => {
+  try {
+    const event: VAPISpeechInterruptedEvent = req.body;
+    const { call, timestamp } = event;
+
+    const eventLogger = createChildLogger({
+      callId: call.id,
+      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom),
+      event: 'SPEECH_INTERRUPTED',
+    });
+
+    eventLogger.info(
+      {
+        timestamp,
+      },
+      '⚠️  USER INTERRUPTED ASSISTANT'
+    );
+
+    res.status(HTTP_STATUS.OK).send();
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error processing speech-interrupted event');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to process event' });
+  }
+});
+
+/**
+ * POST /api/vapi/events/hang
+ * Called when call is hung up
+ */
+app.post('/api/vapi/events/hang', (req: Request, res: Response) => {
+  try {
+    const event: VAPIHangEvent = req.body;
+    const { call, timestamp } = event;
+
+    const eventLogger = createChildLogger({
+      callId: call.id,
+      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom),
+      event: 'HANG',
+    });
+
+    eventLogger.info(
+      {
+        timestamp,
+      },
+      '📞 CALL HUNG UP'
+    );
+
+    res.status(HTTP_STATUS.OK).send();
+  } catch (error: any) {
+    logger.error({ error: error.message }, 'Error processing hang event');
+    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to process event' });
+  }
+});
+
+/**
  * Health check endpoint
  */
 app.get('/health', (_req: Request, res: Response) => {
@@ -770,6 +989,15 @@ const startServer = () => {
 
     logger.info('📊 Dashboard available at: http://localhost:' + PORTS.VAPI_HANDLER);
     logger.info('🔧 To view tool definitions for VAPI configuration, visit: /api/vapi/tools');
+    logger.info('');
+    logger.info('📞 Event webhook endpoints (configure in VAPI dashboard):');
+    logger.info(`   • Call Started: POST /api/vapi/events/call-started`);
+    logger.info(`   • Call Ended:   POST /api/vapi/events/call-ended`);
+    logger.info(`   • Message:      POST /api/vapi/events/message`);
+    logger.info(`   • Interrupted:  POST /api/vapi/events/speech-interrupted`);
+    logger.info(`   • Hang:         POST /api/vapi/events/hang`);
+    logger.info('');
+    logger.info('🌐 For production, expose these endpoints via ngrok and configure in VAPI dashboard');
   });
 };
 

@@ -28,8 +28,8 @@ const elements = {
     totalUsers: document.getElementById('totalUsers'),
     totalClassifications: document.getElementById('totalClassifications'),
     completionRate: document.getElementById('completionRate'),
-    acceptableCount: document.getElementById('acceptableCount'),
-    notAcceptableCount: document.getElementById('notAcceptableCount'),
+    qualifiedCount: document.getElementById('qualifiedCount'),
+    notQualifiedCount: document.getElementById('notQualifiedCount'),
 
     // Tables and grids
     leadsTableBody: document.getElementById('leadsTableBody'),
@@ -168,15 +168,15 @@ function updateStats() {
         ? Math.round((completeUsers / state.users.length) * 100)
         : 0;
 
-    const acceptableCount = state.classifications.filter(c => c.result === 'ACCEPTABLE').length;
-    const notAcceptableCount = state.classifications.filter(c => c.result === 'NOT_ACCEPTABLE').length;
+    const qualifiedCount = state.classifications.filter(c => c.result === 'QUALIFIED').length;
+    const notQualifiedCount = state.classifications.filter(c => c.result === 'NOT_QUALIFIED').length;
 
     elements.totalLeads.textContent = state.leads.length;
     elements.totalUsers.textContent = state.users.length;
     elements.totalClassifications.textContent = state.classifications.length;
     elements.completionRate.textContent = `${completionPercent}%`;
-    elements.acceptableCount.textContent = acceptableCount;
-    elements.notAcceptableCount.textContent = notAcceptableCount;
+    elements.qualifiedCount.textContent = qualifiedCount;
+    elements.notQualifiedCount.textContent = notQualifiedCount;
 }
 
 /**
@@ -300,10 +300,10 @@ function renderClassifications(classifications) {
     }
 
     elements.classificationsGrid.innerHTML = filtered.map(classification => {
-        const isAcceptable = classification.result === 'ACCEPTABLE';
+        const isQualified = classification.result === 'QUALIFIED';
 
         return `
-            <div class="classification-card ${isAcceptable ? 'acceptable' : 'not-acceptable'}">
+            <div class="classification-card ${isQualified ? 'qualified' : 'not-qualified'}">
                 <div class="classification-header">
                     <div>
                         <div class="user-card-title">${escapeHtml(classification.userId)}</div>
@@ -313,7 +313,7 @@ function renderClassifications(classifications) {
                         <div class="classification-score ${classification.score >= 60 ? 'high' : 'low'}">
                             ${classification.score}
                         </div>
-                        <span class="badge ${isAcceptable ? 'badge-success' : 'badge-danger'}">
+                        <span class="badge ${isQualified ? 'badge-success' : 'badge-danger'}">
                             ${classification.result}
                         </span>
                     </div>
@@ -356,7 +356,7 @@ function renderRecentActivity() {
         .slice(0, 5)
         .forEach(c => {
             activities.push({
-                type: c.result === 'ACCEPTABLE' ? 'success' : 'warning',
+                type: c.result === 'QUALIFIED' ? 'success' : 'warning',
                 message: `${c.userId} classified as ${c.result} (Score: ${c.score})`,
                 time: c.createdAt
             });
@@ -414,9 +414,9 @@ async function viewLeadDetails(phoneNumber) {
 
             ${classification ? `
                 <h3 style="margin-top: 2rem; margin-bottom: 1rem;">Classification</h3>
-                <div class="classification-card ${classification.result === 'ACCEPTABLE' ? 'acceptable' : 'not-acceptable'}">
+                <div class="classification-card ${classification.result === 'QUALIFIED' ? 'qualified' : 'not-qualified'}">
                     <div class="classification-header">
-                        <span class="badge ${classification.result === 'ACCEPTABLE' ? 'badge-success' : 'badge-danger'}">
+                        <span class="badge ${classification.result === 'QUALIFIED' ? 'badge-success' : 'badge-danger'}">
                             ${classification.result}
                         </span>
                         <div class="classification-score ${classification.score >= 60 ? 'high' : 'low'}">

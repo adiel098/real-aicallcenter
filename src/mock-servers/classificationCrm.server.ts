@@ -218,7 +218,7 @@ const classifyUser = (userData: UserData): Classification => {
 /**
  * POST /api/classify
  *
- * Classify a user based on their complete bio and genetic data
+ * Classify a Medicare member based on their complete Medicare data and eligibility criteria
  *
  * @body ClassificationRequest - User data to classify
  * @returns ClassificationResponse with classification result
@@ -367,14 +367,14 @@ app.get('/api/classifications', (_req: Request, res: Response) => {
   requestLogger.debug('Fetching all classifications');
 
   const classifications = getAllClassifications();
-  const acceptableCount = classifications.filter((c) => c.result === CLASSIFICATION.ACCEPTABLE).length;
-  const notAcceptableCount = classifications.length - acceptableCount;
+  const qualifiedCount = classifications.filter((c) => c.result === CLASSIFICATION.QUALIFIED).length;
+  const notQualifiedCount = classifications.length - qualifiedCount;
 
   requestLogger.info(
     {
       totalCount: classifications.length,
-      acceptableCount,
-      notAcceptableCount,
+      qualifiedCount,
+      notQualifiedCount,
     },
     'Retrieved all classifications'
   );
@@ -382,8 +382,8 @@ app.get('/api/classifications', (_req: Request, res: Response) => {
   return res.status(HTTP_STATUS.OK).json({
     success: true,
     count: classifications.length,
-    acceptableCount,
-    notAcceptableCount,
+    qualifiedCount,
+    notQualifiedCount,
     classifications,
   });
 });

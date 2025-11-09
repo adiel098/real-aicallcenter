@@ -9,7 +9,7 @@ A modern, responsive web dashboard to view and manage all leads, user data, and 
 ### ✅ Overview Tab
 - **Statistics Cards**: Total leads, users, classifications, and data completion rate
 - **Recent Activity**: Latest classification events
-- **Visual Charts**: Classification results breakdown (Acceptable vs Not Acceptable)
+- **Visual Charts**: Classification results breakdown (Qualified vs Not Qualified)
 
 ### 👥 Leads Tab
 - **Searchable Table**: View all leads with phone, email, and source
@@ -23,7 +23,7 @@ A modern, responsive web dashboard to view and manage all leads, user data, and 
 - **Profile Details**: View bio data (age, gender, height, weight) and genetic data (blood type)
 
 ### ✅ Classifications Tab
-- **Filter Options**: View all, only acceptable, or only not acceptable
+- **Filter Options**: View all, only qualified, or only not qualified
 - **Score Display**: Large score numbers with color coding (green ≥60, red <60)
 - **Detailed Reasons**: See why each user was classified
 - **Factor Breakdown**: Visual indicators showing positive/negative factors
@@ -90,8 +90,8 @@ http://localhost:3000
 #### Classifications Tab
 - Use filter buttons to view:
   - **All**: All classifications
-  - **✅ Acceptable**: Only users with score ≥ 60
-  - **❌ Not Acceptable**: Only users with score < 60
+  - **✅ Qualified**: Only users with score ≥ 60
+  - **❌ Not Qualified**: Only users with score < 60
 - See detailed reasons and factors for each classification
 - Score displayed prominently with color coding
 

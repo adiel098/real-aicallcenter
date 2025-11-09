@@ -421,7 +421,7 @@ VICI Dialer          Twilio/VAPI      AI Agent (GPT)    Backend API       CRMs
      │                    │                  │               │──POST ──────>│
      │                    │                  │               │  /classify   │
      │                    │                  │               │<─Score: 72───│
-     │                    │                  │<─ACCEPTABLE───│              │
+     │                    │                  │<─QUALIFIED────│              │
      │                    │                  │               │              │
      │                    │<──Final Message──┤               │              │
      │                    │──Call Ends───────┤               │              │
@@ -468,6 +468,38 @@ app.post('/api/vapi/tool-calls', async (req, res) => {
     logger.error({ error, toolName }, 'Tool execution failed');
     res.status(500).json({ error: 'Tool failed' });
   }
+});
+
+// VAPI Event Webhooks for Real-Time Call Logging
+app.post('/api/vapi/events/call-started', (req, res) => {
+  const { call, timestamp } = req.body;
+  logger.info({
+    callId: call.id,
+    phoneFrom: call.phoneNumberFrom,
+    phoneTo: call.phoneNumberTo,
+    callType: call.type,
+  }, '📞 CALL STARTED');
+  res.status(200).send();
+});
+
+app.post('/api/vapi/events/message', (req, res) => {
+  const { call, message } = req.body;
+  if (message.role === 'user') {
+    logger.info({ callId: call.id, content: message.content }, '👤 USER SAID');
+  } else if (message.role === 'assistant') {
+    logger.info({ callId: call.id, content: message.content }, '🤖 ASSISTANT SAID');
+  }
+  res.status(200).send();
+});
+
+app.post('/api/vapi/events/call-ended', (req, res) => {
+  const { call } = req.body;
+  logger.info({
+    callId: call.id,
+    duration: call.duration,
+    endReason: call.endReason,
+  }, '📴 CALL ENDED');
+  res.status(200).send();
 });
 ```
 
