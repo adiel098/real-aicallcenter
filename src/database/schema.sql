@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS user_data (
     name TEXT,
     medicare_data TEXT, -- JSON object with Medicare info (age, city, medicareNumber, planLevel, hasColorblindness, etc.)
     eligibility_data TEXT, -- JSON object with eligibility results
-    missing_fields TEXT, -- JSON array of missing required fields
     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP

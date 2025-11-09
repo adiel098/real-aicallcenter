@@ -25,7 +25,6 @@ export interface UserDataRecord {
   name?: string;
   medicare_data?: string; // JSON string of Medicare data object
   eligibility_data?: string; // JSON string of eligibility data object
-  missing_fields?: string; // JSON string of missing fields array
   last_updated?: string;
   created_at?: string;
   updated_at?: string;
@@ -295,8 +294,8 @@ class DatabaseService {
   insertUserData(userData: UserDataRecord): number {
     const stmt = this.db.prepare(`
       INSERT INTO user_data (
-        user_id, phone_number, name, medicare_data, eligibility_data, missing_fields, last_updated
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        user_id, phone_number, name, medicare_data, eligibility_data, last_updated
+      ) VALUES (?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
@@ -305,7 +304,6 @@ class DatabaseService {
       userData.name || null,
       userData.medicare_data || null,
       userData.eligibility_data || null,
-      userData.missing_fields || null,
       userData.last_updated || new Date().toISOString()
     );
 
@@ -367,10 +365,6 @@ class DatabaseService {
     if (updates.eligibility_data !== undefined) {
       fields.push('eligibility_data = ?');
       values.push(updates.eligibility_data);
-    }
-    if (updates.missing_fields !== undefined) {
-      fields.push('missing_fields = ?');
-      values.push(updates.missing_fields);
     }
     if (updates.last_updated !== undefined) {
       fields.push('last_updated = ?');

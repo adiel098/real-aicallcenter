@@ -256,7 +256,8 @@ export const findUserDataByNameAndDOB = (name: string, _dateOfBirth: string): Us
 
 /**
  * Helper function to update user data
- * Merges new data with existing data and recalculates missing fields
+ * Merges new data with existing data
+ * Note: missingFields are calculated dynamically when needed, not stored
  *
  * @param phoneNumber - Phone number to identify user
  * @param updates - Partial updates to apply

@@ -10,7 +10,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import logger from '../config/logger';
 import { PORTS, HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../config/constants';
-import { userDataDatabase, isUserDataComplete, findUserDataByPhoneNumber } from '../data/userData.data';
+import { userDataDatabase, isUserDataComplete, findUserDataByPhoneNumber, calculateMissingFields } from '../data/userData.data';
 import { normalizePhoneNumber, isValidPhoneNumber, maskPhoneNumber } from '../utils/phoneNumber.util';
 import { UserDataResponse, UserDataUpdateRequest, UserData } from '../types/userData.types';
 import databaseService, { UserDataRecord } from '../services/database.service';
@@ -45,7 +45,6 @@ function migrateUserDataToDatabase() {
         name: userData.name,
         medicare_data: JSON.stringify(userData.medicareData),
         eligibility_data: userData.eligibilityData ? JSON.stringify(userData.eligibilityData) : undefined,
-        missing_fields: userData.missingFields ? JSON.stringify(userData.missingFields) : undefined,
         last_updated: userData.lastUpdated,
       };
 
@@ -61,17 +60,23 @@ function migrateUserDataToDatabase() {
 
 /**
  * Convert UserDataRecord from database to UserData type
+ * Calculates missing fields dynamically based on current data
  */
 function convertUserDataRecordToUserData(record: UserDataRecord): UserData {
-  return {
+  const userData: UserData = {
     userId: record.user_id,
     phoneNumber: record.phone_number,
     name: record.name || '',
     medicareData: record.medicare_data ? JSON.parse(record.medicare_data) : {},
     eligibilityData: record.eligibility_data ? JSON.parse(record.eligibility_data) : undefined,
-    missingFields: record.missing_fields ? JSON.parse(record.missing_fields) : undefined,
+    missingFields: [], // Will be calculated below
     lastUpdated: record.last_updated || new Date().toISOString(),
   };
+
+  // Calculate missing fields dynamically from current data
+  userData.missingFields = calculateMissingFields(userData);
+
+  return userData;
 }
 
 /**
