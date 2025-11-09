@@ -81,14 +81,14 @@ Call your VAPI phone number!
 - Call with phone: `+12025551001`
 - Agent will find John Smith with complete data
 - Will proceed straight to classification
-- Result: ACCEPTABLE (score 65)
+- Result: QUALIFIED (score 65)
 
 ### Scenario 2: Incomplete User Data
 - Call with phone: `+12025551003`
 - Agent will find Michael Chen with missing fields
 - Will ask for: height, weight, allergies, blood type
 - After collecting, will classify
-- Result: ACCEPTABLE (score 80+)
+- Result: QUALIFIED (score 80+)
 
 ### Scenario 3: New User
 - Call with any other phone number

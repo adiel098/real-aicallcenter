@@ -117,8 +117,8 @@ The dashboard communicates with these endpoints:
 - **Clean Design**: Professional medical dashboard aesthetic
 - **Responsive Layout**: Works on desktop, tablet, and mobile
 - **Color-Coded Status**: Easy visual identification
-  - 🟢 Green: Acceptable, Complete, Success
-  - 🔴 Red: Not Acceptable, Low Score
+  - 🟢 Green: Qualified, Complete, Success
+  - 🔴 Red: Not Qualified, Low Score
   - 🟡 Yellow: Incomplete, Warning
   - 🔵 Blue: Info, Actions
 
