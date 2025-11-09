@@ -237,7 +237,7 @@ class MetricsService {
     const perfStats = databaseService.getPerformanceStats(hours);
 
     // Calculate P95 latency for each type
-    const byType = perfStats.map((p) => {
+    const byType = perfStats.map((p: any) => {
       const p95 = this.calculateP95Latency(p.metric_type, hours);
       const successRate =
         p.total_requests > 0 ? (p.successful / p.total_requests) * 100 : 0;
@@ -417,9 +417,9 @@ class MetricsService {
     const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
     const latencies = metrics
-      .filter((m) => m.timestamp >= cutoff)
-      .map((m) => m.duration_ms)
-      .sort((a, b) => a - b);
+      .filter((m: any) => m.timestamp >= cutoff)
+      .map((m: any) => m.duration_ms)
+      .sort((a: number, b: number) => a - b);
 
     if (latencies.length === 0) return 0;
 

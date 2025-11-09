@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { logger } from '../config/logger';
+import logger from '../config/logger';
 import {
   MedicareVerificationRequest,
   MedicareVerificationResponse,

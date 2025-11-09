@@ -11,7 +11,6 @@
 
 import axios, { AxiosInstance } from 'axios';
 import logger from '../config/logger';
-import { API_URLS } from '../config/constants';
 import {
   VICIDispositionRequest,
   VICIDispositionResponse,

@@ -42,7 +42,6 @@ import { sendFormLinkSMS } from '../services/sms.service';
 import { generateFormToken, buildFormUrl, validateFormToken, useFormToken } from '../services/token.service';
 import axios from 'axios';
 import databaseService from '../services/database.service';
-import errorHandler from '../services/errorHandler.service';
 import performanceService from '../services/performance.service';
 import metricsService from '../services/metrics.service';
 
@@ -1557,14 +1556,14 @@ app.post('/api/vapi/events/call-started', (req: Request, res: Response) => {
 
     // Persist call to database
     try {
-      const callState = callStateService.getCallState(call.id);
+      const callState = callStateService.getCallSession(call.id);
       databaseService.insertCall({
         call_id: call.id,
-        phone_number: call.customer?.number || call.phoneNumberFrom,
-        call_type: call.type || 'inbound',
+        phone_number: call.customer?.number || call.phoneNumberFrom || '',
+        call_type: (call.type === 'inbound' || call.type === 'outbound') ? call.type : 'inbound',
         start_time: call.startedAt || timestamp,
         agent_extension: callState?.agentExtension,
-        is_business_hours: callState?.isBusinessHours,
+        is_business_hours: callState?.withinBusinessHours,
       });
 
       // Log call started event
@@ -1636,7 +1635,7 @@ app.post('/api/vapi/events/call-ended', (req: Request, res: Response) => {
 
     // Update call in database
     try {
-      const callState = callStateService.getCallState(call.id);
+      const callState = callStateService.getCallSession(call.id);
 
       // Build transcript from messages
       let transcript = '';
@@ -1653,8 +1652,6 @@ app.post('/api/vapi/events/call-ended', (req: Request, res: Response) => {
         end_reason: call.endReason,
         transcript,
         summary,
-        recording_url: call.recordingUrl,
-        total_cost: call.cost,
         message_count: messages?.length || 0,
       });
 
