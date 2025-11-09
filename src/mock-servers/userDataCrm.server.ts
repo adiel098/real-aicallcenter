@@ -1,8 +1,8 @@
 /**
  * User Data CRM Server (Port 3002)
  *
- * Mock CRM server for user bio and genetic data management.
- * Handles retrieving and updating user information.
+ * Mock CRM server for Medicare member data management.
+ * Handles retrieving and updating Medicare member information.
  */
 
 import express, { Request, Response } from 'express';
@@ -57,10 +57,10 @@ app.use((req: Request, res: Response, next) => {
 /**
  * GET /api/users/:phoneNumber
  *
- * Get user bio and genetic data by phone number
+ * Get Medicare member data by phone number
  *
  * @param phoneNumber - Phone number to search for (in URL path)
- * @returns UserDataResponse with user data if found
+ * @returns UserDataResponse with Medicare member data if found
  */
 app.get('/api/users/:phoneNumber', (req: Request, res: Response) => {
   const requestLogger = (res as any).requestLogger;
@@ -159,8 +159,8 @@ app.put('/api/users/:phoneNumber', (req: Request, res: Response) => {
   requestLogger.debug(
     {
       phoneNumber: maskPhoneNumber(phoneNumber),
-      hasBioData: !!updateRequest.bioData,
-      hasGeneticData: !!updateRequest.geneticData,
+      hasMedicareData: !!updateRequest.medicareData,
+      hasEligibilityData: !!updateRequest.eligibilityData,
     },
     'Updating user data'
   );
@@ -176,8 +176,8 @@ app.put('/api/users/:phoneNumber', (req: Request, res: Response) => {
   }
 
   // Validate request body
-  if (!updateRequest.bioData && !updateRequest.geneticData) {
-    requestLogger.warn('Update request missing both bioData and geneticData');
+  if (!updateRequest.medicareData && !updateRequest.eligibilityData) {
+    requestLogger.warn('Update request missing both medicareData and eligibilityData');
 
     return res.status(HTTP_STATUS.BAD_REQUEST).json({
       success: false,
@@ -203,8 +203,8 @@ app.put('/api/users/:phoneNumber', (req: Request, res: Response) => {
 
   // Update user data
   const updatedUser = updateUserData(normalizedPhone, {
-    bioData: updateRequest.bioData,
-    geneticData: updateRequest.geneticData,
+    medicareData: updateRequest.medicareData,
+    eligibilityData: updateRequest.eligibilityData,
   });
 
   if (!updatedUser) {

@@ -112,8 +112,8 @@ export interface GetUserDataArgs {
 /** Arguments for update_user_data tool */
 export interface UpdateUserDataArgs {
   phoneNumber: string;
-  bioData?: Record<string, unknown>;
-  geneticData?: Record<string, unknown>;
+  medicareData?: Record<string, unknown>;
+  eligibilityData?: Record<string, unknown>;
 }
 
 /** Arguments for classify_user tool */
@@ -125,7 +125,7 @@ export interface ClassifyUserArgs {
 export interface SaveClassificationResultArgs {
   userId: string;
   phoneNumber: string;
-  result: 'ACCEPTABLE' | 'NOT_ACCEPTABLE';
+  result: 'QUALIFIED' | 'NOT_QUALIFIED';
   score: number;
   reason: string;
 }

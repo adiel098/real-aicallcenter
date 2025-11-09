@@ -9,8 +9,8 @@
 export const PORTS = {
   VAPI_HANDLER: 3000, // Main VAPI webhook handler
   LEAD_CRM: 3001, // Lead lookup CRM
-  USERDATA_CRM: 3002, // User bio/genetic data CRM
-  CLASSIFICATION_CRM: 3003, // User classification CRM
+  USERDATA_CRM: 3002, // Medicare member data CRM
+  CLASSIFICATION_CRM: 3003, // Medicare eligibility classification CRM
 } as const;
 
 // API Base URLs (for internal service-to-service communication)
@@ -22,8 +22,11 @@ export const API_URLS = {
 
 // Classification Results
 export const CLASSIFICATION = {
-  ACCEPTABLE: 'ACCEPTABLE',
-  NOT_ACCEPTABLE: 'NOT_ACCEPTABLE',
+  QUALIFIED: 'QUALIFIED',
+  NOT_QUALIFIED: 'NOT_QUALIFIED',
+  // Legacy aliases for backwards compatibility
+  ACCEPTABLE: 'QUALIFIED',
+  NOT_ACCEPTABLE: 'NOT_QUALIFIED',
 } as const;
 
 // Error Messages

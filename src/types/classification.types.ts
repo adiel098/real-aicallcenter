@@ -1,15 +1,15 @@
 /**
  * Classification Type Definitions
  *
- * Types for user classification results (acceptable vs not acceptable)
+ * Types for Medicare eligibility qualification results
  */
 
 import { UserData } from './userData.types';
 
 /**
- * ClassificationResult - Result of user classification
+ * ClassificationResult - Result of Medicare eligibility qualification
  */
-export type ClassificationResult = 'ACCEPTABLE' | 'NOT_ACCEPTABLE';
+export type ClassificationResult = 'QUALIFIED' | 'NOT_QUALIFIED';
 
 /**
  * Classification - Full classification record

@@ -205,24 +205,24 @@ export const getUserData = async (phoneNumber: string): Promise<UserDataResponse
 /**
  * Update User Data
  *
- * Update user bio and genetic data in User Data CRM.
+ * Update Medicare member data and eligibility info in User Data CRM.
  *
  * @param phoneNumber - Phone number to identify user
- * @param bioData - Bio data updates (optional)
- * @param geneticData - Genetic data updates (optional)
+ * @param medicareData - Medicare data updates (optional)
+ * @param eligibilityData - Eligibility data updates (optional)
  * @returns Updated user data response
  */
 export const updateUserData = async (
   phoneNumber: string,
-  bioData?: Record<string, unknown>,
-  geneticData?: Record<string, unknown>
+  medicareData?: Record<string, unknown>,
+  eligibilityData?: Record<string, unknown>
 ): Promise<UserDataResponse> => {
   logger.info(
     {
       phoneNumber: maskPhoneNumber(phoneNumber),
       action: 'updateUserData',
-      hasBioData: !!bioData,
-      hasGeneticData: !!geneticData,
+      hasMedicareData: !!medicareData,
+      hasEligibilityData: !!eligibilityData,
     },
     'Updating user data'
   );
@@ -231,8 +231,8 @@ export const updateUserData = async (
 
   const requestBody: UserDataUpdateRequest = {
     phoneNumber,
-    bioData,
-    geneticData,
+    medicareData,
+    eligibilityData,
   };
 
   try {

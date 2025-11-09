@@ -1,8 +1,8 @@
 /**
  * Classification CRM Server (Port 3003)
  *
- * Mock CRM server for user classification based on bio and genetic data.
- * Determines if a user is ACCEPTABLE or NOT_ACCEPTABLE based on health criteria.
+ * Mock CRM server for Medicare eligibility classification.
+ * Determines if a Medicare member is QUALIFIED or NOT_QUALIFIED for premium eyewear subscription.
  */
 
 import express, { Request, Response } from 'express';
@@ -60,148 +60,134 @@ app.use((req: Request, res: Response, next) => {
 });
 
 /**
- * Classification Logic
+ * Medicare Eligibility Classification Logic
  *
- * Determines if a user is acceptable based on their bio and genetic data.
- * This is a simplified algorithm for demonstration purposes.
+ * Determines if a Medicare member qualifies for premium eyewear subscription.
+ * Based on Medicare plan coverage and colorblindness diagnosis.
  *
- * Criteria:
- * - Age: 18-65 preferred (outside range = negative factor)
- * - Medical History: Fewer conditions = better
- * - Genetic Conditions: Fewer conditions = better
- * - Family History: Consideration for hereditary risks
+ * Eligibility Criteria:
+ * - Must have valid Medicare plan (A, B, C, D, or Advantage)
+ * - Must have diagnosed colorblindness
+ * - Medicare plan must cover vision benefits (Advantage, B, C have better coverage)
+ * - Age must be 65+ (Medicare eligible age)
  *
- * @param userData - Complete user data to classify
+ * @param userData - Complete Medicare member data to classify
  * @returns Classification object
  */
 const classifyUser = (userData: UserData): Classification => {
   const requestLogger = logger.child({ userId: userData.userId });
 
-  requestLogger.debug({ userId: userData.userId }, 'Starting classification algorithm');
+  requestLogger.debug({ userId: userData.userId }, 'Starting Medicare eligibility classification');
 
-  let score = 50; // Start at neutral score
+  let score = 0; // Start at 0, must meet all criteria
   const factors: Classification['factors'] = [];
 
-  // Factor 1: Age
-  const age = userData.bioData.age;
-  if (age !== undefined) {
-    if (age >= 18 && age <= 65) {
-      score += 15;
-      factors.push({
-        name: 'age',
-        impact: 'positive',
-        description: `Age ${age} is within preferred range (18-65)`,
-      });
-      requestLogger.debug({ age, scoreChange: +15 }, 'Age factor: positive');
-    } else if (age < 18) {
-      score -= 30;
-      factors.push({
-        name: 'age',
-        impact: 'negative',
-        description: `Age ${age} is below minimum requirement (18)`,
-      });
-      requestLogger.debug({ age, scoreChange: -30 }, 'Age factor: negative (too young)');
-    } else if (age > 65) {
-      score -= 10;
-      factors.push({
-        name: 'age',
-        impact: 'negative',
-        description: `Age ${age} is above preferred range (65+)`,
-      });
-      requestLogger.debug({ age, scoreChange: -10 }, 'Age factor: negative (above preferred)');
-    }
-  }
-
-  // Factor 2: Medical History
-  const medicalConditions = userData.bioData.medicalHistory?.length || 0;
-  if (medicalConditions === 0) {
+  // Factor 1: Medicare Plan Level (REQUIRED)
+  const planLevel = userData.medicareData.planLevel;
+  if (!planLevel) {
+    score = 0;
+    factors.push({
+      name: 'medicare_plan',
+      impact: 'negative',
+      description: 'No Medicare plan on file',
+    });
+    requestLogger.debug('Medicare plan: missing (disqualified)');
+  } else if (planLevel === 'Advantage' || planLevel === 'C') {
+    score += 40;
+    factors.push({
+      name: 'medicare_plan',
+      impact: 'positive',
+      description: `Medicare ${planLevel} includes comprehensive vision coverage`,
+    });
+    requestLogger.debug({ planLevel, scoreChange: +40 }, 'Medicare plan: excellent coverage');
+  } else if (planLevel === 'B') {
+    score += 30;
+    factors.push({
+      name: 'medicare_plan',
+      impact: 'positive',
+      description: `Medicare Plan ${planLevel} includes supplemental vision coverage`,
+    });
+    requestLogger.debug({ planLevel, scoreChange: +30 }, 'Medicare plan: good coverage');
+  } else if (planLevel === 'A' || planLevel === 'D') {
     score += 20;
     factors.push({
-      name: 'medical_history',
-      impact: 'positive',
-      description: 'No pre-existing medical conditions',
-    });
-    requestLogger.debug({ scoreChange: +20 }, 'Medical history: positive (no conditions)');
-  } else if (medicalConditions <= 2) {
-    score += 5;
-    factors.push({
-      name: 'medical_history',
+      name: 'medicare_plan',
       impact: 'neutral',
-      description: `${medicalConditions} manageable medical condition(s)`,
+      description: `Medicare Plan ${planLevel} has limited vision coverage`,
     });
-    requestLogger.debug({ medicalConditions, scoreChange: +5 }, 'Medical history: neutral');
-  } else {
-    score -= 15;
-    factors.push({
-      name: 'medical_history',
-      impact: 'negative',
-      description: `Multiple medical conditions (${medicalConditions})`,
-    });
-    requestLogger.debug({ medicalConditions, scoreChange: -15 }, 'Medical history: negative');
+    requestLogger.debug({ planLevel, scoreChange: +20 }, 'Medicare plan: limited coverage');
   }
 
-  // Factor 3: Genetic Conditions
-  const geneticConditions = userData.geneticData.geneticConditions?.length || 0;
-  if (geneticConditions === 0) {
-    score += 15;
+  // Factor 2: Colorblindness Diagnosis (REQUIRED)
+  const hasColorblindness = userData.medicareData.hasColorblindness;
+  const colorblindType = userData.medicareData.colorblindType;
+  if (hasColorblindness === true) {
+    score += 40;
     factors.push({
-      name: 'genetic_conditions',
+      name: 'colorblindness',
       impact: 'positive',
-      description: 'No known genetic conditions',
+      description: colorblindType
+        ? `Diagnosed with ${colorblindType} colorblindness - qualifies for premium eyewear`
+        : 'Diagnosed with colorblindness - qualifies for premium eyewear',
     });
-    requestLogger.debug({ scoreChange: +15 }, 'Genetic conditions: positive');
-  } else {
-    score -= 20;
+    requestLogger.debug({ colorblindType, scoreChange: +40 }, 'Colorblindness: confirmed diagnosis');
+  } else if (hasColorblindness === false) {
+    score = 0; // Automatic disqualification
     factors.push({
-      name: 'genetic_conditions',
+      name: 'colorblindness',
       impact: 'negative',
-      description: `${geneticConditions} genetic condition(s) identified`,
+      description: 'No colorblindness diagnosis - does not meet eligibility requirement',
     });
-    requestLogger.debug({ geneticConditions, scoreChange: -20 }, 'Genetic conditions: negative');
+    requestLogger.debug('Colorblindness: no diagnosis (disqualified)');
+  } else {
+    score = 0; // Missing required information
+    factors.push({
+      name: 'colorblindness',
+      impact: 'negative',
+      description: 'Colorblindness status not confirmed',
+    });
+    requestLogger.debug('Colorblindness: status unknown (disqualified)');
   }
 
-  // Factor 4: Family History (hereditary risk)
-  const familyHistory = userData.geneticData.familyHistory?.length || 0;
-  if (familyHistory === 0) {
+  // Factor 3: Age (Medicare eligibility age is 65+)
+  const age = userData.medicareData.age;
+  if (age !== undefined && age >= 65) {
+    score += 20;
+    factors.push({
+      name: 'age',
+      impact: 'positive',
+      description: `Age ${age} meets Medicare eligibility (65+)`,
+    });
+    requestLogger.debug({ age, scoreChange: +20 }, 'Age: Medicare eligible');
+  } else if (age !== undefined && age < 65) {
+    // Under 65 can still have Medicare (disability, etc.)
     score += 10;
     factors.push({
-      name: 'family_history',
-      impact: 'positive',
-      description: 'No significant family medical history',
-    });
-    requestLogger.debug({ scoreChange: +10 }, 'Family history: positive');
-  } else if (familyHistory <= 2) {
-    factors.push({
-      name: 'family_history',
+      name: 'age',
       impact: 'neutral',
-      description: `Limited family history (${familyHistory} condition(s))`,
+      description: `Age ${age} - Medicare eligible through disability or other qualification`,
     });
-    requestLogger.debug({ familyHistory }, 'Family history: neutral');
-  } else {
-    score -= 10;
-    factors.push({
-      name: 'family_history',
-      impact: 'negative',
-      description: `Significant family history (${familyHistory} condition(s))`,
-    });
-    requestLogger.debug({ familyHistory, scoreChange: -10 }, 'Family history: negative');
+    requestLogger.debug({ age, scoreChange: +10 }, 'Age: early Medicare eligibility');
   }
 
   // Ensure score stays within 0-100 range
   score = Math.max(0, Math.min(100, score));
 
   // Determine result based on score threshold
-  // Threshold: 60+ = ACCEPTABLE, below 60 = NOT_ACCEPTABLE
-  const result: ClassificationResult = score >= 60 ? CLASSIFICATION.ACCEPTABLE : CLASSIFICATION.NOT_ACCEPTABLE;
+  // Threshold: 80+ = QUALIFIED (must have plan + colorblindness)
+  const result: ClassificationResult = score >= 80 ? CLASSIFICATION.QUALIFIED : CLASSIFICATION.NOT_QUALIFIED;
 
   // Generate detailed reason
   const reason =
-    result === CLASSIFICATION.ACCEPTABLE
-      ? `User meets acceptability criteria with a score of ${score}/100. Positive factors include ${factors.filter((f) => f.impact === 'positive').length} favorable indicators.`
-      : `User does not meet acceptability criteria with a score of ${score}/100. Key concerns: ${factors
-          .filter((f) => f.impact === 'negative')
-          .map((f) => f.name)
-          .join(', ')}.`;
+    result === CLASSIFICATION.QUALIFIED
+      ? `Member qualifies for premium eyewear subscription with a score of ${score}/100. Has valid Medicare coverage and confirmed colorblindness diagnosis.`
+      : `Member does not qualify for premium eyewear subscription (score: ${score}/100). ${
+          hasColorblindness === false
+            ? 'No colorblindness diagnosis on file.'
+            : !planLevel
+            ? 'No Medicare plan information available.'
+            : 'Does not meet all eligibility requirements.'
+        }`;
 
   requestLogger.info(
     {

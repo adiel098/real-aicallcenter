@@ -1,54 +1,66 @@
 /**
  * User Data Type Definitions
  *
- * Types for comprehensive user bio and genetic data stored in the User Data CRM
+ * Types for Medicare member data and eligibility information
  */
 
 /**
- * BioData - Biological/demographic information about the user
+ * MedicareData - Medicare member demographics and health information
  */
-export interface BioData {
+export interface MedicareData {
   /** User's age in years */
   age?: number;
 
-  /** User's biological sex */
-  gender?: 'male' | 'female' | 'other';
+  /** City of residence (for initial screening verification) */
+  city?: string;
 
-  /** Height in centimeters */
-  height?: number;
+  /** Medicare Beneficiary Identifier (MBI) - format: 1AB2-CD3-EF45 */
+  medicareNumber?: string;
 
-  /** Weight in kilograms */
-  weight?: number;
+  /** Medicare plan level */
+  planLevel?: 'A' | 'B' | 'C' | 'D' | 'Advantage';
 
-  /** Medical history summary */
+  /** Whether user has been diagnosed with colorblindness */
+  hasColorblindness?: boolean;
+
+  /** Type of colorblindness (e.g., red-green, blue-yellow, total) */
+  colorblindType?: string;
+
+  /** Current eyewear status */
+  currentEyewear?: string;
+
+  /** Relevant medical history */
   medicalHistory?: string[];
 
   /** Current medications */
   currentMedications?: string[];
-
-  /** Known allergies */
-  allergies?: string[];
 }
 
 /**
- * GeneticData - Genetic and hereditary information
+ * EligibilityData - Medicare eligibility and subscription information
  */
-export interface GeneticData {
-  /** Blood type (A+, A-, B+, B-, AB+, AB-, O+, O-) */
-  bloodType?: string;
+export interface EligibilityData {
+  /** Whether user is eligible for premium eyewear subscription */
+  isEligibleForPremiumEyewear?: boolean;
 
-  /** Genetic conditions or predispositions */
-  geneticConditions?: string[];
+  /** Timestamp when eligibility was last checked */
+  eligibilityCheckedAt?: string;
 
-  /** Family history of diseases */
-  familyHistory?: string[];
+  /** Current plan eligibility status */
+  planEligibilityStatus?: 'QUALIFIED' | 'NOT_QUALIFIED' | 'PENDING';
 
-  /** Genetic markers (simplified for demo) */
-  markers?: Record<string, string>;
+  /** Subscription level the user qualifies for */
+  subscriptionLevel?: 'BASIC' | 'PREMIUM' | 'NONE';
+
+  /** MBI validation status */
+  mbiValidated?: boolean;
+
+  /** Plan coverage details */
+  planCoverageDetails?: string;
 }
 
 /**
- * UserData - Complete user profile with bio and genetic data
+ * UserData - Complete user profile with Medicare and eligibility data
  */
 export interface UserData {
   /** Unique user identifier (can match leadId) */
@@ -60,11 +72,11 @@ export interface UserData {
   /** User's full name */
   name: string;
 
-  /** Biological data */
-  bioData: BioData;
+  /** Medicare member data */
+  medicareData: MedicareData;
 
-  /** Genetic data */
-  geneticData: GeneticData;
+  /** Eligibility information */
+  eligibilityData: EligibilityData;
 
   /** List of fields that are missing/incomplete */
   missingFields: string[];
@@ -80,11 +92,11 @@ export interface UserDataUpdateRequest {
   /** Phone number to identify the user */
   phoneNumber: string;
 
-  /** Partial bio data to update */
-  bioData?: Partial<BioData>;
+  /** Partial Medicare data to update */
+  medicareData?: Partial<MedicareData>;
 
-  /** Partial genetic data to update */
-  geneticData?: Partial<GeneticData>;
+  /** Partial eligibility data to update */
+  eligibilityData?: Partial<EligibilityData>;
 }
 
 /**

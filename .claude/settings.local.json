@@ -13,7 +13,8 @@
       "Read(//c/Users/A/AppData/Roaming/Claude/**)",
       "Bash(claude mcp)",
       "Bash(claude mcp:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

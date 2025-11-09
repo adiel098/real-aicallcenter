@@ -23,6 +23,15 @@ export interface Lead {
   /** Lead's email address */
   email: string;
 
+  /** City of residence (for initial screening verification) */
+  city?: string;
+
+  /** Whether name has been verified during call */
+  verifiedName?: boolean;
+
+  /** Whether city has been verified during call */
+  verifiedCity?: boolean;
+
   /** When this lead was created/added to the system */
   createdAt: string; // ISO 8601 date string
 

@@ -139,9 +139,14 @@ const handleGetUserData = async (args: GetUserDataArgs, callLogger: any): Promis
       // Build human-readable list of missing fields
       const missingFieldsReadable = missingFields.map((field) => {
         // Convert field path to readable name
-        // e.g., "bioData.age" -> "age"
+        // e.g., "medicareData.medicareNumber" -> "Medicare number"
         const parts = field.split('.');
-        return parts[parts.length - 1];
+        const fieldName = parts[parts.length - 1];
+        // Make field names more readable
+        return fieldName
+          .replace(/([A-Z])/g, ' $1')
+          .toLowerCase()
+          .trim();
       });
 
       return JSON.stringify({
@@ -164,19 +169,19 @@ const handleGetUserData = async (args: GetUserDataArgs, callLogger: any): Promis
 
 /**
  * Handle update_user_data tool call
- * Updates user bio and genetic data in User Data CRM
+ * Updates Medicare member data and eligibility info in User Data CRM
  */
 const handleUpdateUserData = async (args: UpdateUserDataArgs, callLogger: any): Promise<string> => {
   callLogger.info(
     {
       phoneNumber: maskPhoneNumber(args.phoneNumber),
-      hasBioData: !!args.bioData,
-      hasGeneticData: !!args.geneticData,
+      hasMedicareData: !!args.medicareData,
+      hasEligibilityData: !!args.eligibilityData,
     },
     'Tool: update_user_data'
   );
 
-  const result = await vapiService.updateUserData(args.phoneNumber, args.bioData, args.geneticData);
+  const result = await vapiService.updateUserData(args.phoneNumber, args.medicareData, args.eligibilityData);
 
   if (result.found && result.userData) {
     const isComplete = result.isComplete;
@@ -616,7 +621,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
     },
     {
       name: 'get_user_data',
-      description: 'Retrieve user bio and genetic data',
+      description: 'Retrieve Medicare member data and check for missing required information',
       parameters: {
         type: 'object',
         properties: {
@@ -630,7 +635,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
     },
     {
       name: 'update_user_data',
-      description: 'Update user bio and genetic data with information collected from the user',
+      description: 'Update Medicare member data with information collected during the conversation',
       parameters: {
         type: 'object',
         properties: {
@@ -638,13 +643,13 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
             type: 'string',
             description: 'Phone number in E.164 format',
           },
-          bioData: {
+          medicareData: {
             type: 'object',
-            description: 'Bio data to update (age, gender, height, weight, medicalHistory, allergies, etc.)',
+            description: 'Medicare data to update: medicareNumber (MBI), planLevel (A/B/C/D/Advantage), hasColorblindness (boolean), colorblindType, currentEyewear, etc.',
           },
-          geneticData: {
+          eligibilityData: {
             type: 'object',
-            description: 'Genetic data to update (bloodType, familyHistory, etc.)',
+            description: 'Eligibility data to update (usually set by system during classification)',
           },
         },
         required: ['phoneNumber'],
@@ -652,7 +657,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
     },
     {
       name: 'classify_user',
-      description: 'Classify user as ACCEPTABLE or NOT_ACCEPTABLE based on complete bio and genetic data',
+      description: 'Check Medicare eligibility and determine if member QUALIFIES or does NOT_QUALIFY for premium eyewear subscription based on Medicare plan and colorblindness diagnosis',
       parameters: {
         type: 'object',
         properties: {
@@ -666,7 +671,7 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
     },
     {
       name: 'save_classification_result',
-      description: 'Save the classification result to the CRM after telling the user',
+      description: 'Save the Medicare eligibility qualification result to the retailer CRM after informing the member',
       parameters: {
         type: 'object',
         properties: {
@@ -680,16 +685,16 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
           },
           result: {
             type: 'string',
-            enum: ['ACCEPTABLE', 'NOT_ACCEPTABLE'],
-            description: 'Classification result',
+            enum: ['QUALIFIED', 'NOT_QUALIFIED'],
+            description: 'Medicare eligibility qualification result',
           },
           score: {
             type: 'number',
-            description: 'Classification score (0-100)',
+            description: 'Eligibility score (0-100)',
           },
           reason: {
             type: 'string',
-            description: 'Reason for the classification',
+            description: 'Reason for the qualification decision',
           },
         },
         required: ['userId', 'phoneNumber', 'result', 'score', 'reason'],
