@@ -11,6 +11,7 @@ export const PORTS = {
   LEAD_CRM: 3001, // Lead lookup CRM
   USERDATA_CRM: 3002, // Medicare member data CRM
   CLASSIFICATION_CRM: 3003, // Medicare eligibility classification CRM
+  VICI_MOCK: 3004, // VICI Dialer mock server
 } as const;
 
 // API Base URLs (for internal service-to-service communication)
@@ -18,6 +19,7 @@ export const API_URLS = {
   LEAD_CRM: `http://localhost:${PORTS.LEAD_CRM}/api`,
   USERDATA_CRM: `http://localhost:${PORTS.USERDATA_CRM}/api`,
   CLASSIFICATION_CRM: `http://localhost:${PORTS.CLASSIFICATION_CRM}/api`,
+  VICI: `http://localhost:${PORTS.VICI_MOCK}/api`,
 } as const;
 
 // Classification Results
@@ -27,6 +29,18 @@ export const CLASSIFICATION = {
   // Legacy aliases for backwards compatibility
   ACCEPTABLE: 'QUALIFIED',
   NOT_ACCEPTABLE: 'NOT_QUALIFIED',
+} as const;
+
+// VICI Dispositions (per AlexAI_Workflow_Full_Detailed.md)
+export const VICI_DISPOSITIONS = {
+  SALE: 'SALE', // Qualified - Insurance validated, eligible for premium eyewear
+  NQI: 'NQI', // Not Qualified Insurance - Doesn't meet Medicare eligibility
+  NI: 'NI', // Not Interested - Caller declined program
+  NA: 'NA', // No Answer - Rings 30 seconds, no pickup
+  AM: 'AM', // Answering Machine - Voicemail detected
+  DC: 'DC', // Disconnected - Line disconnected, fax tone, or fast busy
+  B: 'B', // Busy - Line busy signal
+  DAIR: 'DAIR', // Dead Air - At least 6 seconds silence before "hello"
 } as const;
 
 // Error Messages

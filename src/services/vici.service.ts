@@ -1,45 +1,62 @@
+/**
+ * VICI Dialer Service
+ *
+ * Handles communication with VICI dialer system:
+ * - Sending call dispositions (SALE, NQI, NA, AM, etc.)
+ * - Scheduling callbacks
+ * - Managing call metadata
+ *
+ * Based on AlexAI + VICI Workflow specification
+ */
+
 import axios, { AxiosInstance } from 'axios';
-import { logger } from '../config/logger';
+import logger from '../config/logger';
+import { API_URLS } from '../config/constants';
 import {
-  ViciDispositionRequest,
-  ViciDispositionResponse,
-  ViciLeadRequest,
-  ViciLead,
-  CallMetadata,
-  DispositionCode
+  VICIDispositionRequest,
+  VICIDispositionResponse,
+  VICICallbackRequest,
+  VICICallbackResponse,
+  VICIDisposition,
+  AgentPhone,
 } from '../types/vici.types';
 
 class ViciService {
   private client: AxiosInstance;
   private readonly apiUrl: string;
-  private readonly apiToken: string;
   private readonly maxRetries: number = 3;
+  private readonly defaultCampaignId = 'MEDICARE_EYEWEAR_2025';
+  private readonly defaultAgentId: AgentPhone = '8001';
 
   constructor() {
-    this.apiUrl = process.env.VICI_API_URL || 'https://vici-dialer.example.com/api';
-    this.apiToken = process.env.VICI_API_TOKEN || '';
+    // Use localhost VICI mock server (port 3004) or environment variable
+    this.apiUrl = process.env.VICI_API_URL || 'http://localhost:3004/api';
 
     this.client = axios.create({
       baseURL: this.apiUrl,
       headers: {
-        'Authorization': `Bearer ${this.apiToken}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
       },
-      timeout: 10000 // 10 second timeout
+      timeout: 10000, // 10 second timeout
     });
 
+    // Request interceptor for logging
     this.client.interceptors.request.use((config) => {
-      logger.debug({ url: config.url, method: config.method }, 'VICI API request');
+      logger.debug(
+        { url: config.url, method: config.method, data: config.data },
+        'VICI API request'
+      );
       return config;
     });
 
+    // Response interceptor for logging
     this.client.interceptors.response.use(
       (response) => {
-        logger.debug({ status: response.status }, 'VICI API response');
+        logger.debug({ status: response.status, data: response.data }, 'VICI API response');
         return response;
       },
       (error) => {
-        logger.error({ error: error.message }, 'VICI API error');
+        logger.error({ error: error.message, response: error.response?.data }, 'VICI API error');
         throw error;
       }
     );
@@ -47,38 +64,63 @@ class ViciService {
 
   /**
    * Send call disposition to VICI
+   *
+   * Automatically called after classify_and_save_user completes
+   * Maps classification result to VICI disposition codes
+   *
+   * @param phoneNumber - Customer phone number
+   * @param disposition - VICI disposition code (SALE, NQI, NI, etc.)
+   * @param metadata - Additional call metadata
+   * @returns Disposition response from VICI
    */
-  async sendDisposition(callData: CallMetadata): Promise<ViciDispositionResponse> {
-    const disposition = this.determineDisposition(callData);
-
-    const payload: ViciDispositionRequest = {
-      leadId: callData.leadId || 'UNKNOWN',
-      campaignId: callData.campaignId || 'EYEWEAR_MEDICARE_2025',
-      phoneNumber: callData.phoneNumber,
-      disposition: disposition.code,
-      subDisposition: disposition.subDisposition,
-      agentId: 'AI_AGENT_001',
-      callDuration: callData.duration,
+  async sendDisposition(
+    phoneNumber: string,
+    disposition: VICIDisposition,
+    metadata: {
+      leadId?: string;
+      campaignId?: string;
+      agentId?: AgentPhone;
+      callDuration?: number;
+      eligibilityScore?: number;
+      classificationResult?: 'QUALIFIED' | 'NOT_QUALIFIED';
+      mbiValidated?: boolean;
+      reason?: string;
+    } = {}
+  ): Promise<VICIDispositionResponse> {
+    const payload: VICIDispositionRequest = {
+      leadId: metadata.leadId || `lead-${phoneNumber}`,
+      campaignId: metadata.campaignId || this.defaultCampaignId,
+      phoneNumber,
+      disposition,
+      agentId: metadata.agentId || this.defaultAgentId,
+      callDuration: metadata.callDuration || 0,
       metadata: {
-        eligibilityScore: callData.score,
-        medicareVerified: callData.score !== undefined,
-        nextAction: disposition.nextAction,
-        completedAt: callData.completedAt
-      }
+        eligibilityScore: metadata.eligibilityScore,
+        classificationResult: metadata.classificationResult,
+        mbiValidated: metadata.mbiValidated,
+        medicareVerified: metadata.mbiValidated,
+        reason: metadata.reason,
+      },
     };
 
     logger.info(
       {
         leadId: payload.leadId,
-        disposition: payload.disposition,
-        score: callData.score
+        phoneNumber,
+        disposition,
+        classificationResult: metadata.classificationResult,
       },
       'Sending disposition to VICI'
     );
 
     try {
       const response = await this.callWithRetry(() =>
-        this.client.post<ViciDispositionResponse>('/dispositions', payload)
+        this.client.post<VICIDispositionResponse>('/dispositions', payload)
+      );
+
+      logger.info(
+        { dispositionId: response.data.dispositionId, leadId: payload.leadId },
+        'Disposition sent successfully to VICI'
       );
 
       return response.data;
@@ -89,93 +131,81 @@ class ViciService {
   }
 
   /**
-   * Get next lead from VICI queue
+   * Schedule callback in VICI
+   *
+   * Used when:
+   * - MBI validation fails after 3 retries
+   * - Customer requests to be called back later
+   * - Incomplete data collection
+   *
+   * @param phoneNumber - Customer phone number
+   * @param callbackDateTime - ISO 8601 datetime for callback
+   * @param reason - Reason for callback
+   * @param metadata - Additional metadata
+   * @returns Callback response from VICI
    */
-  async getNextLead(request: ViciLeadRequest): Promise<ViciLead | null> {
+  async scheduleCallback(
+    phoneNumber: string,
+    callbackDateTime: string,
+    reason: string,
+    metadata: {
+      leadId?: string;
+      campaignId?: string;
+      agentId?: AgentPhone;
+      notes?: string;
+    } = {}
+  ): Promise<VICICallbackResponse> {
+    const payload: VICICallbackRequest = {
+      leadId: metadata.leadId || `lead-${phoneNumber}`,
+      campaignId: metadata.campaignId || this.defaultCampaignId,
+      phoneNumber,
+      callbackDateTime,
+      agentId: metadata.agentId || this.defaultAgentId,
+      reason,
+      notes: metadata.notes,
+    };
+
+    logger.info(
+      {
+        leadId: payload.leadId,
+        phoneNumber,
+        callbackDateTime,
+        reason,
+      },
+      'Scheduling callback in VICI'
+    );
+
     try {
       const response = await this.callWithRetry(() =>
-        this.client.post<ViciLead>('/leads/next', request)
+        this.client.post<VICICallbackResponse>('/callbacks', payload)
       );
 
-      logger.info({ leadId: response.data.leadId }, 'Retrieved next lead from VICI');
+      logger.info(
+        { callbackId: response.data.callbackId, scheduledFor: response.data.scheduledFor },
+        'Callback scheduled successfully in VICI'
+      );
+
       return response.data;
     } catch (error: any) {
-      if (error.response?.status === 404) {
-        logger.info('No leads available in VICI queue');
-        return null;
-      }
-
-      logger.error({ error }, 'Failed to get next lead from VICI');
-      throw error;
+      logger.error({ error, payload }, 'Failed to schedule callback in VICI');
+      throw new Error(`VICI callback scheduling failed: ${error.message}`);
     }
   }
 
   /**
-   * Update lead status in VICI
+   * Map classification result to VICI disposition
+   *
+   * Business logic:
+   * - QUALIFIED → SALE (eligible for premium eyewear)
+   * - NOT_QUALIFIED → NQI (not qualified insurance)
+   *
+   * @param classificationResult - Classification result
+   * @returns VICI disposition code
    */
-  async updateLeadStatus(leadId: string, status: string, metadata?: Record<string, any>): Promise<void> {
-    try {
-      await this.callWithRetry(() =>
-        this.client.patch(`/leads/${leadId}`, { status, metadata })
-      );
-
-      logger.info({ leadId, status }, 'Updated lead status in VICI');
-    } catch (error: any) {
-      logger.error({ error, leadId }, 'Failed to update lead status in VICI');
-      throw error;
-    }
-  }
-
-  /**
-   * Determine disposition code based on call metadata
-   */
-  private determineDisposition(callData: CallMetadata): {
-    code: DispositionCode;
-    subDisposition?: string;
-    nextAction?: string;
-  } {
-    // No live contact confirmed
-    if (!callData.liveContactConfirmed) {
-      return {
-        code: 'NA',
-        subDisposition: 'NO_ANSWER',
-        nextAction: 'RETRY_LATER'
-      };
-    }
-
-    // User declined to participate
-    if (callData.userDeclined) {
-      return {
-        code: 'NQI',
-        subDisposition: 'NOT_INTERESTED',
-        nextAction: 'REMOVE_FROM_QUEUE'
-      };
-    }
-
-    // User qualified (score >= 60)
-    if (callData.score !== undefined && callData.score >= 60) {
-      return {
-        code: 'SALE',
-        subDisposition: 'QUALIFIED',
-        nextAction: 'SEND_SUBSCRIPTION_KIT'
-      };
-    }
-
-    // User did not qualify
-    if (callData.score !== undefined && callData.score < 60) {
-      return {
-        code: 'NQI',
-        subDisposition: 'NOT_QUALIFIED',
-        nextAction: 'SEND_ALTERNATIVE_OPTIONS'
-      };
-    }
-
-    // Incomplete call - needs callback
-    return {
-      code: 'CB',
-      subDisposition: 'INCOMPLETE',
-      nextAction: 'SCHEDULE_CALLBACK'
-    };
+  mapClassificationToDisposition(
+    classificationResult: 'QUALIFIED' | 'NOT_QUALIFIED'
+  ): VICIDisposition {
+    return classificationResult === 'QUALIFIED' ? 'SALE' : 'NQI';
   }
 
   /**

@@ -434,3 +434,84 @@ export const saveClassificationResult = async (
     };
   }
 };
+
+/**
+ * Send VICI Disposition
+ *
+ * Automatically sends disposition to VICI after classification is complete.
+ * Maps classification result to VICI disposition codes:
+ * - QUALIFIED → SALE
+ * - NOT_QUALIFIED → NQI
+ *
+ * @param phoneNumber - Customer phone number
+ * @param classificationResult - QUALIFIED or NOT_QUALIFIED
+ * @param score - Eligibility score
+ * @param reason - Classification reason
+ * @returns Disposition result with VICI disposition ID
+ */
+export const sendVICIDisposition = async (
+  phoneNumber: string,
+  classificationResult: 'QUALIFIED' | 'NOT_QUALIFIED' | 'ACCEPTABLE' | 'NOT_ACCEPTABLE',
+  score: number,
+  reason: string
+): Promise<{ disposition: string; dispositionId: string; timestamp: string }> => {
+  // Import VICI service
+  const { viciService } = await import('./vici.service');
+
+  // Normalize classification result (handle legacy aliases)
+  const normalizedResult =
+    classificationResult === 'ACCEPTABLE'
+      ? 'QUALIFIED'
+      : classificationResult === 'NOT_ACCEPTABLE'
+        ? 'NOT_QUALIFIED'
+        : classificationResult;
+
+  // Map classification to VICI disposition
+  const disposition = viciService.mapClassificationToDisposition(normalizedResult);
+
+  logger.info(
+    {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      classificationResult: normalizedResult,
+      disposition,
+      score,
+      action: 'sendVICIDisposition',
+    },
+    'Sending disposition to VICI'
+  );
+
+  try {
+    const viciResponse = await viciService.sendDisposition(phoneNumber, disposition, {
+      eligibilityScore: score,
+      classificationResult: normalizedResult,
+      mbiValidated: true, // Assume MBI validated if classification completed
+      reason,
+    });
+
+    logger.info(
+      {
+        phoneNumber: maskPhoneNumber(phoneNumber),
+        disposition,
+        dispositionId: viciResponse.dispositionId,
+      },
+      'VICI disposition sent successfully'
+    );
+
+    return {
+      disposition,
+      dispositionId: viciResponse.dispositionId,
+      timestamp: viciResponse.timestamp,
+    };
+  } catch (error: any) {
+    logger.error(
+      {
+        phoneNumber: maskPhoneNumber(phoneNumber),
+        disposition,
+        error: error.message,
+      },
+      'Failed to send VICI disposition'
+    );
+
+    throw new Error(`Failed to send VICI disposition: ${error.message}`);
+  }
+};
