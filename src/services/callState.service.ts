@@ -61,7 +61,11 @@ export interface CallSession {
   withinBusinessHours: boolean;
 
   // Metadata
-  metadata: Record<string, any>;
+  metadata: {
+    leadCheckResult?: any;      // Cached result from auto-check on call start
+    leadChecked?: boolean;       // Flag indicating lead check was performed
+    [key: string]: any;          // Allow additional metadata
+  };
 }
 
 /**

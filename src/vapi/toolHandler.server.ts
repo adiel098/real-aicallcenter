@@ -136,11 +136,34 @@ app.post('/', async (req: Request, res: Response) => {
     const messageType = body.message.type;
     const call = body.call;
 
+    // DEBUG: Log ALL incoming webhooks to see structure
+    logger.info(
+      {
+        'DEBUG_MESSAGE_TYPE': messageType,
+        'DEBUG_HAS_CALL': !!call,
+        'DEBUG_BODY_KEYS': Object.keys(body),
+        'DEBUG_FULL_BODY': JSON.stringify(body, null, 2),
+      },
+      `🔍 DEBUG: VAPI webhook received - type: ${messageType}`
+    );
+
+    // Some message types don't have a call object - handle gracefully
+    if (!call) {
+      logger.warn(
+        {
+          messageType,
+          bodyKeys: Object.keys(body),
+        },
+        '⚠️  VAPI message received without call object - ignoring'
+      );
+      return res.status(HTTP_STATUS.OK).send();
+    }
+
     // Create logger with call context
     const eventLogger = createChildLogger({
-      callId: call?.id,
-      customerNumber: call?.customer?.number ? maskPhoneNumber(call?.customer?.number) :
-                      call?.phoneNumberFrom ? maskPhoneNumber(call?.phoneNumberFrom) : 'unknown',
+      callId: call.id,
+      customerNumber: call.customer?.number ? maskPhoneNumber(call.customer.number) :
+                      call.phoneNumberFrom ? maskPhoneNumber(call.phoneNumberFrom) : 'unknown',
       event: messageType,
     });
 
@@ -202,6 +225,18 @@ async function handleStatusUpdate(body: any, eventLogger: any): Promise<void> {
     const phoneNumber = call.customer?.number || call.phoneNumberFrom || 'unknown';
     const session = callStateService.createCallSession(call.id, phoneNumber);
 
+    // DEBUG: Log full call object to see what VAPI sends
+    eventLogger.info(
+      {
+        'DEBUG_CALL_OBJECT': call,
+        'DEBUG_CUSTOMER': call.customer,
+        'DEBUG_CUSTOMER_NUMBER': call.customer?.number,
+        'DEBUG_PHONE_FROM': call.phoneNumberFrom,
+        'DEBUG_PHONE_TO': call.phoneNumberTo,
+      },
+      '🔍 DEBUG: Full call object from VAPI'
+    );
+
     eventLogger.info(
       {
         callType: call.type,
@@ -213,6 +248,27 @@ async function handleStatusUpdate(body: any, eventLogger: any): Promise<void> {
       },
       `📞 CALL STARTED - Agent: ${session.agentExtension} - Business Hours: ${session.withinBusinessHours ? 'Yes' : 'No'}`
     );
+
+    // Auto-check lead on call start
+    try {
+      eventLogger.info({ phoneNumber: maskPhoneNumber(phoneNumber) }, '🔍 Auto-checking lead on call start');
+      const leadResult = await vapiService.checkLead(phoneNumber);
+
+      // Cache the result in session metadata
+      session.metadata.leadCheckResult = leadResult;
+      session.metadata.leadChecked = true;
+
+      eventLogger.info(
+        {
+          found: leadResult.found,
+          leadId: leadResult.found ? leadResult.lead?.leadId : undefined
+        },
+        `✅ Lead auto-check complete - ${leadResult.found ? 'FOUND' : 'NOT FOUND'}`
+      );
+    } catch (error: any) {
+      eventLogger.error({ error: error.message }, 'Failed to auto-check lead on call start');
+      // Don't block call if lead check fails
+    }
 
     // Check business hours and send disposition if outside hours
     if (!session.withinBusinessHours) {
@@ -489,9 +545,37 @@ async function handleEndOfCallReport(body: any, eventLogger: any): Promise<void>
  * Handle check_lead tool call
  * Checks if a phone number exists in the Lead CRM
  */
-const handleCheckLead = async (args: CheckLeadArgs, callLogger: any): Promise<string> => {
+const handleCheckLead = async (args: CheckLeadArgs, callLogger: any, callId: string): Promise<string> => {
   callLogger.info({ phoneNumber: maskPhoneNumber(args.phoneNumber) }, 'Tool: check_lead');
 
+  // Check if lead was already checked on call start (cached result)
+  const session = callStateService.getCallSession(callId);
+  if (session?.metadata.leadChecked && session?.metadata.leadCheckResult) {
+    callLogger.info('✨ Using cached lead check result (auto-checked on call start)');
+    const result = session.metadata.leadCheckResult;
+
+    if (result.found && result.lead) {
+      callLogger.info({ leadId: result.lead.leadId }, 'Lead found (cached)');
+
+      return JSON.stringify({
+        found: true,
+        leadId: result.lead.leadId,
+        name: result.lead.name,
+        email: result.lead.email,
+        message: `Lead found: ${result.lead.name}`,
+      });
+    } else {
+      callLogger.info('Lead not found (cached)');
+
+      return JSON.stringify({
+        found: false,
+        message: 'Lead not found with this phone number. Please ask the caller for their name and email to create a new lead.',
+      });
+    }
+  }
+
+  // If no cached result, perform the check now
+  callLogger.info('No cached result - performing lead check now');
   const result = await vapiService.checkLead(args.phoneNumber);
 
   if (result.found && result.lead) {
@@ -1336,7 +1420,7 @@ const handleToolCall = async (toolName: string, args: any, callLogger: any, call
   try {
     switch (toolName) {
       case 'check_lead':
-        return await handleCheckLead(args as CheckLeadArgs, callLogger);
+        return await handleCheckLead(args as CheckLeadArgs, callLogger, callId);
 
       case 'get_user_data':
         return await handleGetUserData(args as GetUserDataArgs, callLogger);
