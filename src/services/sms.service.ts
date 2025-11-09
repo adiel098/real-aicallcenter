@@ -1,5 +1,5 @@
 import twilio from 'twilio';
-import logger from '../utils/logger';
+import logger from '../config/logger';
 
 /**
  * SMS Service for sending text messages via Twilio
