@@ -36,7 +36,8 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         connectSrc: ["'self'", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'"],
+        scriptSrcAttr: ["'none'"],  // Explicitly block inline event handlers for security
         styleSrc: ["'self'", "'unsafe-inline'"],
       },
     },
@@ -399,13 +400,48 @@ const handleClassifyAndSaveUser = async (args: ClassifyUserArgs, callLogger: any
   if (saveResult.success) {
     callLogger.info({ userId: classification.userId }, 'Classification result saved automatically');
 
-    return JSON.stringify({
-      success: true,
-      result: classification.result,
-      score: classification.score,
-      reason: classification.reason,
-      message: `Classification complete and saved: ${classification.result} (Score: ${classification.score}/100). ${classification.reason}`,
-    });
+    // VICI Integration: Automatically send disposition to VICI
+    try {
+      const dispositionResult = await vapiService.sendVICIDisposition(
+        args.phoneNumber,
+        classification.result,
+        classification.score,
+        classification.reason
+      );
+
+      callLogger.info(
+        {
+          userId: classification.userId,
+          disposition: dispositionResult.disposition,
+          dispositionId: dispositionResult.dispositionId,
+        },
+        'VICI disposition sent successfully'
+      );
+
+      return JSON.stringify({
+        success: true,
+        result: classification.result,
+        score: classification.score,
+        reason: classification.reason,
+        viciDisposition: dispositionResult.disposition,
+        message: `Classification complete and saved: ${classification.result} (Score: ${classification.score}/100). ${classification.reason}. Disposition ${dispositionResult.disposition} sent to VICI.`,
+      });
+    } catch (viciError: any) {
+      // Log VICI error but don't fail the entire operation
+      callLogger.warn(
+        { userId: classification.userId, error: viciError.message },
+        'Failed to send VICI disposition (classification still saved)'
+      );
+
+      return JSON.stringify({
+        success: true,
+        result: classification.result,
+        score: classification.score,
+        reason: classification.reason,
+        viciDispositionFailed: true,
+        message: `Classification complete and saved: ${classification.result} (Score: ${classification.score}/100). ${classification.reason}. Warning: VICI disposition failed.`,
+      });
+    }
   } else {
     callLogger.warn({ userId: classification.userId }, 'Classification succeeded but saving failed');
 
@@ -423,6 +459,12 @@ const handleClassifyAndSaveUser = async (args: ClassifyUserArgs, callLogger: any
 /**
  * Main tool call router
  * Routes incoming tool calls to the appropriate handler function
+ *
+ * Available tools (4 total):
+ * - check_lead: Find caller in system
+ * - get_user_data: Get Medicare data and missing fields
+ * - update_user_data: Collect Medicare info from conversation
+ * - classify_and_save_user: Classify eligibility + Save + Send VICI disposition (all-in-one)
  */
 const handleToolCall = async (toolName: string, args: any, callLogger: any): Promise<string> => {
   callLogger.debug({ toolName, args }, 'Routing tool call');
@@ -438,19 +480,16 @@ const handleToolCall = async (toolName: string, args: any, callLogger: any): Pro
       case 'update_user_data':
         return await handleUpdateUserData(args as UpdateUserDataArgs, callLogger);
 
-      case 'classify_user':
-        return await handleClassifyUser(args as ClassifyUserArgs, callLogger);
-
-      case 'save_classification_result':
-        return await handleSaveClassificationResult(args as SaveClassificationResultArgs, callLogger);
-
       case 'classify_and_save_user':
         return await handleClassifyAndSaveUser(args as ClassifyUserArgs, callLogger);
+
+      // Legacy tools - removed for simplified workflow
+      // classify_user and save_classification_result have been replaced by classify_and_save_user
 
       default:
         callLogger.warn({ toolName }, 'Unknown tool name');
         return JSON.stringify({
-          error: `Unknown tool: ${toolName}`,
+          error: `Unknown tool: ${toolName}. Available tools: check_lead, get_user_data, update_user_data, classify_and_save_user`,
         });
     }
   } catch (error: any) {
@@ -656,8 +695,8 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
       },
     },
     {
-      name: 'classify_user',
-      description: 'Check Medicare eligibility and determine if member QUALIFIES or does NOT_QUALIFY for premium eyewear subscription based on Medicare plan and colorblindness diagnosis',
+      name: 'classify_and_save_user',
+      description: 'ONE-STEP TOOL: Checks Medicare eligibility, saves result to CRM, and automatically sends VICI disposition (SALE if QUALIFIED, NQI if NOT_QUALIFIED). This is the final step after all data is collected.',
       parameters: {
         type: 'object',
         properties: {
@@ -669,43 +708,13 @@ app.get('/api/vapi/tools', (_req: Request, res: Response) => {
         required: ['phoneNumber'],
       },
     },
-    {
-      name: 'save_classification_result',
-      description: 'Save the Medicare eligibility qualification result to the retailer CRM after informing the member',
-      parameters: {
-        type: 'object',
-        properties: {
-          userId: {
-            type: 'string',
-            description: 'User ID',
-          },
-          phoneNumber: {
-            type: 'string',
-            description: 'Phone number in E.164 format',
-          },
-          result: {
-            type: 'string',
-            enum: ['QUALIFIED', 'NOT_QUALIFIED'],
-            description: 'Medicare eligibility qualification result',
-          },
-          score: {
-            type: 'number',
-            description: 'Eligibility score (0-100)',
-          },
-          reason: {
-            type: 'string',
-            description: 'Reason for the qualification decision',
-          },
-        },
-        required: ['userId', 'phoneNumber', 'result', 'score', 'reason'],
-      },
-    },
   ];
 
   res.status(HTTP_STATUS.OK).json({
     tools,
     serverUrl: `http://localhost:${PORTS.VAPI_HANDLER}/api/vapi/tool-calls`,
-    note: 'Copy these tool definitions to your VAPI dashboard. Update serverUrl if using ngrok or deployed URL.',
+    note: 'SIMPLIFIED 4-TOOL WORKFLOW: check_lead → get_user_data → update_user_data → classify_and_save_user. Copy these tool definitions to your VAPI dashboard. Update serverUrl if using ngrok or deployed URL.',
+    totalTools: 4,
   });
 });
 

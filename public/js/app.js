@@ -196,12 +196,17 @@ function renderLeads(leads) {
             <td>${lead.source ? `<span class="badge badge-info">${escapeHtml(lead.source)}</span>` : '-'}</td>
             <td>${formatDate(lead.createdAt)}</td>
             <td>
-                <button class="btn btn-sm btn-info" onclick="viewLeadDetails('${escapeHtml(lead.phoneNumber)}')">
+                <button class="btn btn-sm btn-info view-lead-btn" data-phone="${escapeHtml(lead.phoneNumber)}">
                     View Details
                 </button>
             </td>
         </tr>
     `).join('');
+
+    // Attach event listeners to view buttons
+    document.querySelectorAll('.view-lead-btn').forEach(btn => {
+        btn.addEventListener('click', () => viewLeadDetails(btn.dataset.phone));
+    });
 }
 
 /**
@@ -253,13 +258,18 @@ function renderUsers(users) {
                     ${!user.isComplete ? `<div class="detail-row"><span class="detail-label">Missing:</span><span class="detail-value">${user.missingFields.length} fields</span></div>` : ''}
                 </div>
 
-                <button class="btn btn-sm btn-info" style="margin-top: 1rem; width: 100%;"
-                        onclick="viewUserDetails('${escapeHtml(user.phoneNumber)}')">
+                <button class="btn btn-sm btn-info view-user-btn" style="margin-top: 1rem; width: 100%;"
+                        data-phone="${escapeHtml(user.phoneNumber)}">
                     View Full Profile
                 </button>
             </div>
         `;
     }).join('');
+
+    // Attach event listeners to view buttons
+    document.querySelectorAll('.view-user-btn').forEach(btn => {
+        btn.addEventListener('click', () => viewUserDetails(btn.dataset.phone));
+    });
 }
 
 /**

@@ -107,10 +107,11 @@ const API = {
      * Health checks
      */
     async checkHealth() {
+        // Note: Health endpoints are at /health (not /api/health)
         const checks = await Promise.allSettled([
-            fetch(`${API.BASE_URLS.LEADS}/health`),
-            fetch(`${API.BASE_URLS.USERS}/health`),
-            fetch(`${API.BASE_URLS.CLASSIFICATIONS}/health`)
+            fetch('http://localhost:3001/health'),
+            fetch('http://localhost:3002/health'),
+            fetch('http://localhost:3003/health')
         ]);
 
         return {
