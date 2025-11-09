@@ -21,7 +21,6 @@ import {
   VICICallbackResponse,
   VICICall,
   VICIDisposition,
-  CallState,
 } from '../types/vici.types';
 
 const app = express();
@@ -123,10 +122,10 @@ app.post('/api/dispositions', (req: Request, res: Response) => {
       message: `Disposition ${dispositionRequest.disposition} recorded for lead ${dispositionRequest.leadId}`,
     };
 
-    res.status(200).json(response);
+    return res.status(200).json(response);
   } catch (error: any) {
     logger.error({ error: error.message }, 'Error processing disposition');
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error processing disposition',
     });
@@ -196,10 +195,10 @@ app.post('/api/callbacks', (req: Request, res: Response) => {
       timestamp: callbackRecord.timestamp,
     };
 
-    res.status(200).json(response);
+    return res.status(200).json(response);
   } catch (error: any) {
     logger.error({ error: error.message }, 'Error scheduling callback');
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       error: 'Internal server error scheduling callback',
     });

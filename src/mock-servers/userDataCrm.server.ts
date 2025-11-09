@@ -10,7 +10,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import logger from '../config/logger';
 import { PORTS, HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../config/constants';
-import { userDataDatabase, isUserDataComplete } from '../data/userData.data';
+import { userDataDatabase, isUserDataComplete, findUserDataByPhoneNumber } from '../data/userData.data';
 import { normalizePhoneNumber, isValidPhoneNumber, maskPhoneNumber } from '../utils/phoneNumber.util';
 import { UserDataResponse, UserDataUpdateRequest, UserData } from '../types/userData.types';
 import databaseService, { UserDataRecord } from '../services/database.service';
@@ -66,7 +66,7 @@ function convertUserDataRecordToUserData(record: UserDataRecord): UserData {
   return {
     userId: record.user_id,
     phoneNumber: record.phone_number,
-    name: record.name || undefined,
+    name: record.name || '',
     medicareData: record.medicare_data ? JSON.parse(record.medicare_data) : {},
     eligibilityData: record.eligibility_data ? JSON.parse(record.eligibility_data) : undefined,
     missingFields: record.missing_fields ? JSON.parse(record.missing_fields) : undefined,
@@ -249,48 +249,59 @@ app.put('/api/users/:phoneNumber', (req: Request, res: Response) => {
     });
   }
 
-  const beforeMissingFields = [...existingUser.missingFields];
+  const beforeMissingFields = [...(existingUser.missingFields || [])];
 
-  // Update user data
-  const updatedUser = updateUserData(normalizedPhone, {
-    medicareData: updateRequest.medicareData,
-    eligibilityData: updateRequest.eligibilityData,
-  });
+  // Update user data in database
+  try {
+    const updates: Partial<UserDataRecord> = {
+      medicare_data: updateRequest.medicareData ? JSON.stringify(updateRequest.medicareData) : undefined,
+      eligibility_data: updateRequest.eligibilityData ? JSON.stringify(updateRequest.eligibilityData) : undefined,
+      last_updated: new Date().toISOString(),
+    };
 
-  if (!updatedUser) {
-    requestLogger.error({ phoneNumber: maskPhoneNumber(normalizedPhone) }, 'Failed to update user data');
+    databaseService.updateUserData(existingUser.userId, updates);
+
+    // Fetch updated record
+    const updatedRecord = databaseService.getUserDataById(existingUser.userId);
+    if (!updatedRecord) {
+      throw new Error('Failed to fetch updated user data');
+    }
+
+    const updatedUser = convertUserDataRecordToUserData(updatedRecord);
+    const afterMissingFields = updatedUser.missingFields || [];
+    const fieldsCompleted = beforeMissingFields.filter((field) => !afterMissingFields.includes(field));
+
+    // Log successful update with before/after comparison
+    requestLogger.info(
+      {
+        phoneNumber: maskPhoneNumber(normalizedPhone),
+        userId: updatedUser.userId,
+        beforeMissingCount: beforeMissingFields.length,
+        afterMissingCount: afterMissingFields.length,
+        fieldsCompleted: fieldsCompleted,
+        isNowComplete: isUserDataComplete(updatedUser),
+      },
+      'User data updated successfully'
+    );
+
+    const response: UserDataResponse = {
+      found: true,
+      userData: updatedUser,
+      isComplete: isUserDataComplete(updatedUser),
+      missingFields: updatedUser.missingFields || [],
+      message: SUCCESS_MESSAGES.USER_DATA_UPDATED,
+    };
+
+    return res.status(HTTP_STATUS.OK).json(response);
+  } catch (error: any) {
+    requestLogger.error({ error: error.message, phoneNumber: maskPhoneNumber(normalizedPhone) }, 'Failed to update user data');
 
     return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: 'Failed to update user data',
+      error: error.message,
     });
   }
-
-  const afterMissingFields = updatedUser.missingFields;
-  const fieldsCompleted = beforeMissingFields.filter((field) => !afterMissingFields.includes(field));
-
-  // Log successful update with before/after comparison
-  requestLogger.info(
-    {
-      phoneNumber: maskPhoneNumber(normalizedPhone),
-      userId: updatedUser.userId,
-      beforeMissingCount: beforeMissingFields.length,
-      afterMissingCount: afterMissingFields.length,
-      fieldsCompleted: fieldsCompleted,
-      isNowComplete: isUserDataComplete(updatedUser),
-    },
-    'User data updated successfully'
-  );
-
-  const response: UserDataResponse = {
-    found: true,
-    userData: updatedUser,
-    isComplete: isUserDataComplete(updatedUser),
-    missingFields: updatedUser.missingFields,
-    message: SUCCESS_MESSAGES.USER_DATA_UPDATED,
-  };
-
-  return res.status(HTTP_STATUS.OK).json(response);
 });
 
 /**
@@ -305,8 +316,15 @@ app.get('/api/users', (_req: Request, res: Response) => {
 
   requestLogger.debug('Fetching all users');
 
-  const count = userDataDatabase.length;
-  const completeCount = userDataDatabase.filter(isUserDataComplete).length;
+  // Get query parameters for pagination
+  const limit = parseInt(_req.query.limit as string) || 100;
+  const offset = parseInt(_req.query.offset as string) || 0;
+
+  const userRecords = databaseService.getAllUserData(limit, offset);
+  const users = userRecords.map(convertUserDataRecordToUserData);
+
+  const count = users.length;
+  const completeCount = users.filter(isUserDataComplete).length;
   const incompleteCount = count - completeCount;
 
   requestLogger.info(
@@ -323,7 +341,7 @@ app.get('/api/users', (_req: Request, res: Response) => {
     count,
     completeCount,
     incompleteCount,
-    users: userDataDatabase,
+    users,
   });
 });
 
@@ -366,13 +384,14 @@ app.post('/api/users', (req: Request, res: Response) => {
   const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
   // Check if user already exists
-  if (userExists(normalizedPhone)) {
+  if (databaseService.userDataExists(normalizedPhone)) {
     requestLogger.warn(
       { phoneNumber: maskPhoneNumber(normalizedPhone) },
       'User already exists with this phone number'
     );
 
-    const existingUser = findUserDataByPhoneNumber(normalizedPhone);
+    const existingRecord = databaseService.getUserDataByPhone(normalizedPhone);
+    const existingUser = existingRecord ? convertUserDataRecordToUserData(existingRecord) : null;
     return res.status(HTTP_STATUS.CONFLICT).json({
       success: false,
       message: 'A user with this phone number already exists',
@@ -382,18 +401,42 @@ app.post('/api/users', (req: Request, res: Response) => {
 
   // Create new user
   try {
-    const newUser = createUserData({
-      phoneNumber: normalizedPhone,
+    // Generate unique userId
+    const allUserData = databaseService.getAllUserData(1000, 0);
+    const userId = `user-${String(allUserData.length + 1).padStart(3, '0')}`;
+
+    // Calculate missing fields
+    const missingFields: string[] = [];
+    if (!medicareData?.age) missingFields.push('age');
+    if (!medicareData?.city) missingFields.push('city');
+    if (!medicareData?.medicareNumber) missingFields.push('medicareNumber');
+    if (!medicareData?.planLevel) missingFields.push('planLevel');
+    if (medicareData?.hasColorblindness === undefined) missingFields.push('hasColorblindness');
+
+    const userRecord: UserDataRecord = {
+      user_id: userId,
+      phone_number: normalizedPhone,
       name,
-      medicareData,
-    });
+      medicare_data: medicareData ? JSON.stringify(medicareData) : undefined,
+      missing_fields: JSON.stringify(missingFields),
+      last_updated: new Date().toISOString(),
+    };
+
+    databaseService.insertUserData(userRecord);
+
+    const newRecord = databaseService.getUserDataById(userId);
+    if (!newRecord) {
+      throw new Error('Failed to fetch newly created user data');
+    }
+
+    const newUser = convertUserDataRecordToUserData(newRecord);
 
     requestLogger.info(
       {
         phoneNumber: maskPhoneNumber(normalizedPhone),
         userId: newUser.userId,
         userName: newUser.name,
-        missingFieldsCount: newUser.missingFields.length,
+        missingFieldsCount: newUser.missingFields?.length || 0,
       },
       'User created successfully'
     );
@@ -402,7 +445,7 @@ app.post('/api/users', (req: Request, res: Response) => {
       found: true,
       userData: newUser,
       isComplete: isUserDataComplete(newUser),
-      missingFields: newUser.missingFields,
+      missingFields: newUser.missingFields || [],
       message: 'User created successfully',
     };
 
@@ -471,9 +514,9 @@ app.get('/api/users/search/by-medicare', (req: Request, res: Response) => {
 
   requestLogger.debug({ mbi }, 'Looking up user by Medicare number');
 
-  const userData = findUserDataByMedicareNumber(mbi);
+  const userRecord = databaseService.getUserDataByMedicareNumber(mbi);
 
-  if (!userData) {
+  if (!userRecord) {
     requestLogger.info({ mbi }, 'User not found by Medicare number');
     return res.status(HTTP_STATUS.NOT_FOUND).json({
       found: false,
@@ -484,6 +527,7 @@ app.get('/api/users/search/by-medicare', (req: Request, res: Response) => {
     });
   }
 
+  const userData = convertUserDataRecordToUserData(userRecord);
   const complete = isUserDataComplete(userData);
 
   requestLogger.info(
@@ -500,11 +544,11 @@ app.get('/api/users/search/by-medicare', (req: Request, res: Response) => {
     found: true,
     userData,
     isComplete: complete,
-    missingFields: userData.missingFields,
+    missingFields: userData.missingFields || [],
     message: 'User data retrieved successfully',
   };
 
-  res.status(HTTP_STATUS.OK).json(response);
+  return res.status(HTTP_STATUS.OK).json(response);
 });
 
 /**
@@ -532,9 +576,9 @@ app.get('/api/users/search/by-name-dob', (req: Request, res: Response) => {
 
   requestLogger.debug({ name, dob }, 'Looking up user by name and DOB');
 
-  const userData = findUserDataByNameAndDOB(name, dob);
+  const userRecord = databaseService.getUserDataByNameAndDOB(name, dob);
 
-  if (!userData) {
+  if (!userRecord) {
     requestLogger.info({ name, dob }, 'User not found by name and DOB');
     return res.status(HTTP_STATUS.NOT_FOUND).json({
       found: false,
@@ -545,6 +589,7 @@ app.get('/api/users/search/by-name-dob', (req: Request, res: Response) => {
     });
   }
 
+  const userData = convertUserDataRecordToUserData(userRecord);
   const complete = isUserDataComplete(userData);
 
   requestLogger.info(
@@ -561,29 +606,34 @@ app.get('/api/users/search/by-name-dob', (req: Request, res: Response) => {
     found: true,
     userData,
     isComplete: complete,
-    missingFields: userData.missingFields,
+    missingFields: userData.missingFields || [],
     message: 'User data retrieved successfully',
   };
 
-  res.status(HTTP_STATUS.OK).json(response);
+  return res.status(HTTP_STATUS.OK).json(response);
 });
 
 /**
  * Start the server
  */
 const startServer = () => {
+  // Migrate in-memory user data to database on startup
+  migrateUserDataToDatabase();
+
   app.listen(PORTS.USERDATA_CRM, () => {
-    const completeCount = userDataDatabase.filter(isUserDataComplete).length;
+    const allUserRecords = databaseService.getAllUserData(1000, 0);
+    const allUsers = allUserRecords.map(convertUserDataRecordToUserData);
+    const completeCount = allUsers.filter(isUserDataComplete).length;
 
     logger.info(
       {
         port: PORTS.USERDATA_CRM,
         service: 'userdata-crm',
-        usersCount: userDataDatabase.length,
+        usersCount: allUsers.length,
         completeCount,
-        incompleteCount: userDataDatabase.length - completeCount,
+        incompleteCount: allUsers.length - completeCount,
       },
-      `User Data CRM Server started on port ${PORTS.USERDATA_CRM}`
+      `User Data CRM Server started on port ${PORTS.USERDATA_CRM} with ${allUsers.length} users in database`
     );
   });
 };

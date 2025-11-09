@@ -244,7 +244,7 @@ export const findUserDataByMedicareNumber = (medicareNumber: string): UserData |
  * @param dateOfBirth - Date of birth in ISO format (YYYY-MM-DD)
  * @returns UserData if found, undefined otherwise
  */
-export const findUserDataByNameAndDOB = (name: string, dateOfBirth: string): UserData | undefined => {
+export const findUserDataByNameAndDOB = (name: string, _dateOfBirth: string): UserData | undefined => {
   const normalizedSearchName = name.toLowerCase().trim();
 
   return userDataDatabase.find((user) => {

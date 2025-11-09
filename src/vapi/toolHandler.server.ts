@@ -30,12 +30,11 @@ import {
   VAPIMessageEvent,
   VAPISpeechInterruptedEvent,
   VAPIHangEvent,
-  VAPIServerMessage,
 } from '../types/vapi.types';
 import * as vapiService from '../services/vapi.service';
 import { maskPhoneNumber } from '../utils/phoneNumber.util';
 import { medicareService } from '../services/medicare.service';
-import { callStateService, CallStatus } from '../services/callState.service';
+import { callStateService } from '../services/callState.service';
 import { callStatusDetectionService } from '../services/callStatusDetection.service';
 import { viciService } from '../services/vici.service';
 import { sendFormLinkSMS } from '../services/sms.service';
@@ -87,7 +86,7 @@ app.use(express.static(publicPath));
 /**
  * Request logging middleware
  */
-app.use((req: Request, res: Response, next) => {
+app.use((_req: Request, res: Response, next) => {
   const requestId = `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
   const requestLogger = createChildLogger({
@@ -381,7 +380,7 @@ function handleTranscript(body: any, eventLogger: any): void {
   // Partial transcripts are suppressed to keep logs clean
 }
 
-function handleSpeechUpdate(body: any, eventLogger: any): void {
+function handleSpeechUpdate(_body: any, _eventLogger: any): void {
   // Speech updates are suppressed to keep logs clean
   // Final transcripts already show what was said
 }
@@ -454,11 +453,11 @@ function handleToolCallsResult(body: any, eventLogger: any): void {
   });
 }
 
-function handleHang(body: any, eventLogger: any): void {
+function handleHang(_body: any, eventLogger: any): void {
   eventLogger.info('📞 CALL HUNG UP');
 }
 
-function handleUserInterrupted(body: any, eventLogger: any): void {
+function handleUserInterrupted(_body: any, eventLogger: any): void {
   eventLogger.info('⚠️  USER INTERRUPTED ASSISTANT');
 }
 
@@ -723,8 +722,10 @@ const handleUpdateUserData = async (args: UpdateUserDataArgs, callLogger: any): 
 /**
  * Handle classify_user tool call
  * Sends user data to Classification CRM for analysis
+ * @deprecated Legacy function - use handleClassifyAndSaveUser instead
  */
-const handleClassifyUser = async (args: ClassifyUserArgs, callLogger: any): Promise<string> => {
+// @ts-ignore - Legacy function kept for reference
+const _handleClassifyUser = async (args: ClassifyUserArgs, callLogger: any): Promise<string> => {
   callLogger.info({ phoneNumber: maskPhoneNumber(args.phoneNumber) }, 'Tool: classify_user');
 
   // First, get the complete user data
@@ -788,8 +789,10 @@ const handleClassifyUser = async (args: ClassifyUserArgs, callLogger: any): Prom
 /**
  * Handle save_classification_result tool call
  * Saves the final classification result to Classification CRM
+ * @deprecated Legacy function - use handleClassifyAndSaveUser instead
  */
-const handleSaveClassificationResult = async (
+// @ts-ignore - Legacy function kept for reference
+const _handleSaveClassificationResult = async (
   args: SaveClassificationResultArgs,
   callLogger: any
 ): Promise<string> => {
@@ -1167,7 +1170,7 @@ const handleScheduleCallback = async (
 const handleTransferCall = async (
   args: TransferCallArgs,
   callLogger: any,
-  callId: string
+  _callId: string
 ): Promise<string> => {
   callLogger.info(
     {
@@ -1303,7 +1306,7 @@ const handleFindUserByMedicareNumber = async (
       `http://localhost:${PORTS.USERDATA_CRM}/api/users/search/by-medicare?mbi=${encodeURIComponent(medicareNumber)}`
     );
 
-    const result = await response.json();
+    const result = (await response.json()) as any;
 
     if (result.found && result.userData) {
       callLogger.info(
@@ -1362,7 +1365,7 @@ const handleFindUserByNameDOB = async (
       `http://localhost:${PORTS.USERDATA_CRM}/api/users/search/by-name-dob?name=${encodeURIComponent(name)}&dob=${encodeURIComponent(dateOfBirth)}`
     );
 
-    const result = await response.json();
+    const result = (await response.json()) as any;
 
     if (result.found && result.userData) {
       callLogger.info(
@@ -1535,10 +1538,10 @@ app.post('/api/vapi/tool-calls', async (req: Request, res: Response) => {
         'Processing individual tool call'
       );
 
-      // Parse arguments
+      // Parse arguments (handle both string and object formats from VAPI)
       let args: any;
       try {
-        args = JSON.parse(argsString);
+        args = typeof argsString === 'string' ? JSON.parse(argsString) : argsString;
       } catch (error) {
         callLogger.error({ toolCallId, argsString }, 'Failed to parse tool arguments');
 
@@ -1645,7 +1648,7 @@ app.post('/api/vapi/events/call-started', (req: Request, res: Response) => {
 
     const eventLogger = createChildLogger({
       callId: call.id,
-      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom),
+      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom || 'unknown'),
       event: 'CALL_STARTED',
     });
 
@@ -1707,7 +1710,7 @@ app.post('/api/vapi/events/call-ended', (req: Request, res: Response) => {
 
     const eventLogger = createChildLogger({
       callId: call.id,
-      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom),
+      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom || 'unknown'),
       event: 'CALL_ENDED',
     });
 
@@ -1747,8 +1750,6 @@ app.post('/api/vapi/events/call-ended', (req: Request, res: Response) => {
 
     // Update call in database
     try {
-      const callState = callStateService.getCallSession(call.id);
-
       // Build transcript from messages
       let transcript = '';
       if (messages && messages.length > 0) {
@@ -1796,7 +1797,7 @@ app.post('/api/vapi/events/message', (req: Request, res: Response) => {
 
     const eventLogger = createChildLogger({
       callId: call.id,
-      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom),
+      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom || 'unknown'),
       event: 'MESSAGE',
     });
 
@@ -1858,7 +1859,7 @@ app.post('/api/vapi/events/speech-interrupted', (req: Request, res: Response) =>
 
     const eventLogger = createChildLogger({
       callId: call.id,
-      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom),
+      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom || 'unknown'),
       event: 'SPEECH_INTERRUPTED',
     });
 
@@ -1887,7 +1888,7 @@ app.post('/api/vapi/events/hang', (req: Request, res: Response) => {
 
     const eventLogger = createChildLogger({
       callId: call.id,
-      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom),
+      customerNumber: maskPhoneNumber(call.customer?.number || call.phoneNumberFrom || 'unknown'),
       event: 'HANG',
     });
 
@@ -2217,7 +2218,7 @@ app.post('/api/form-submission', async (req: Request, res: Response) => {
     if (formData.medicalHistory) medicareData.medicalHistory = formData.medicalHistory;
     if (formData.currentMedications) medicareData.currentMedications = formData.currentMedications;
 
-    const userDataResponse = await axios.post(`http://localhost:${PORTS.USER_DATA_CRM}/api/users`, {
+    const userDataResponse = await axios.post(`http://localhost:${PORTS.USERDATA_CRM}/api/users`, {
       phoneNumber,
       name: formData.name,
       medicareData,
@@ -2383,14 +2384,14 @@ app.get('/api/calls/:callId', (_req: Request, res: Response) => {
     const events = databaseService.getCallEvents(callId);
     const toolExecutions = databaseService.getToolExecutions(callId);
 
-    res.status(HTTP_STATUS.OK).json({
+    return res.status(HTTP_STATUS.OK).json({
       call,
       events,
       toolExecutions,
     });
   } catch (error: any) {
     logger.error({ error: error.message }, 'Failed to get call details');
-    res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get call details' });
+    return res.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).json({ error: 'Failed to get call details' });
   }
 });
 

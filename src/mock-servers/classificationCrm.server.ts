@@ -10,12 +10,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import logger from '../config/logger';
 import { PORTS, HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES, CLASSIFICATION } from '../config/constants';
-import {
-  classificationsDatabase,
-  saveClassification,
-  findClassificationByUserId,
-  getAllClassifications,
-} from '../data/classifications.data';
+import { classificationsDatabase } from '../data/classifications.data';
 import { maskPhoneNumber } from '../utils/phoneNumber.util';
 import {
   Classification,
@@ -25,6 +20,7 @@ import {
   ClassificationResult,
 } from '../types/classification.types';
 import { UserData } from '../types/userData.types';
+import databaseService, { ClassificationRecord } from '../services/database.service';
 
 // Initialize Express app
 const app = express();
@@ -58,6 +54,68 @@ app.use((req: Request, res: Response, next) => {
 
   next();
 });
+
+/**
+ * Migrate in-memory classifications to database on startup
+ * This ensures existing test data is available in the database
+ */
+function migrateClassificationsToDatabase() {
+  logger.info({ count: classificationsDatabase.length }, 'Migrating in-memory classifications to database');
+
+  let migrated = 0;
+  let skipped = 0;
+
+  for (const classification of classificationsDatabase) {
+    try {
+      // Check if classification already exists in database
+      const existing = databaseService.getClassificationByUserId(classification.userId);
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      // Insert classification into database
+      const classificationRecord: ClassificationRecord = {
+        classification_id: classification.classificationId,
+        user_id: classification.userId,
+        phone_number: classification.phoneNumber,
+        result: classification.result,
+        score: classification.score,
+        reason: classification.reason || '',
+        factors: classification.factors ? JSON.stringify(classification.factors) : undefined,
+      };
+
+      databaseService.insertClassification(classificationRecord);
+      migrated++;
+    } catch (error: any) {
+      logger.error(
+        { error: error.message, classificationId: classification.classificationId },
+        'Failed to migrate classification'
+      );
+    }
+  }
+
+  logger.info(
+    { migrated, skipped },
+    `Classification migration complete: ${migrated} migrated, ${skipped} skipped`
+  );
+}
+
+/**
+ * Convert ClassificationRecord from database to Classification type
+ */
+function convertClassificationRecordToClassification(record: ClassificationRecord): Classification {
+  return {
+    classificationId: record.classification_id,
+    userId: record.user_id,
+    phoneNumber: record.phone_number,
+    result: record.result as ClassificationResult,
+    score: record.score,
+    reason: record.reason || '',
+    factors: record.factors ? JSON.parse(record.factors) : undefined,
+    createdAt: record.created_at || new Date().toISOString(),
+  };
+}
 
 /**
  * Medicare Eligibility Classification Logic
@@ -294,7 +352,16 @@ app.post('/api/classify', (req: Request, res: Response) => {
   const classification = classifyUser(userData);
 
   // Save classification to database
-  saveClassification(classification);
+  const classificationRecord: ClassificationRecord = {
+    classification_id: classification.classificationId,
+    user_id: classification.userId,
+    phone_number: classification.phoneNumber,
+    result: classification.result,
+    score: classification.score,
+    reason: classification.reason || '',
+    factors: classification.factors ? JSON.stringify(classification.factors) : undefined,
+  };
+  databaseService.insertClassification(classificationRecord);
 
   requestLogger.info(
     {
@@ -354,7 +421,17 @@ app.put('/api/classify/:userId/result', (req: Request, res: Response) => {
     createdAt: new Date().toISOString(),
   };
 
-  saveClassification(classification);
+  // Save to database
+  const classificationRecord: ClassificationRecord = {
+    classification_id: classification.classificationId,
+    user_id: classification.userId,
+    phone_number: classification.phoneNumber,
+    result: classification.result,
+    score: classification.score,
+    reason: classification.reason || '',
+    factors: JSON.stringify(classification.factors),
+  };
+  databaseService.insertClassification(classificationRecord);
 
   requestLogger.info(
     {
@@ -384,7 +461,8 @@ app.get('/api/classifications', (_req: Request, res: Response) => {
 
   requestLogger.debug('Fetching all classifications');
 
-  const classifications = getAllClassifications();
+  const classificationRecords = databaseService.getAllClassifications();
+  const classifications = classificationRecords.map(convertClassificationRecordToClassification);
   const qualifiedCount = classifications.filter((c) => c.result === CLASSIFICATION.QUALIFIED).length;
   const notQualifiedCount = classifications.length - qualifiedCount;
 
@@ -420,9 +498,9 @@ app.get('/api/classifications/:userId', (req: Request, res: Response) => {
 
   requestLogger.debug({ userId }, 'Looking up classification by user ID');
 
-  const classification = findClassificationByUserId(userId);
+  const classificationRecord = databaseService.getClassificationByUserId(userId);
 
-  if (!classification) {
+  if (!classificationRecord) {
     requestLogger.info({ userId }, 'Classification not found');
 
     return res.status(HTTP_STATUS.NOT_FOUND).json({
@@ -430,6 +508,8 @@ app.get('/api/classifications/:userId', (req: Request, res: Response) => {
       message: 'Classification not found for this user',
     });
   }
+
+  const classification = convertClassificationRecordToClassification(classificationRecord);
 
   requestLogger.info({ userId, result: classification.result }, 'Classification found');
 
@@ -472,14 +552,20 @@ app.use((err: Error, _req: Request, res: Response, _next: any) => {
  * Start the server
  */
 const startServer = () => {
+  // Migrate in-memory classifications to database on startup
+  migrateClassificationsToDatabase();
+
   app.listen(PORTS.CLASSIFICATION_CRM, () => {
+    const classificationRecords = databaseService.getAllClassifications();
+    const classificationsCount = classificationRecords.length;
+
     logger.info(
       {
         port: PORTS.CLASSIFICATION_CRM,
         service: 'classification-crm',
-        classificationsCount: classificationsDatabase.length,
+        classificationsCount,
       },
-      `Classification CRM Server started on port ${PORTS.CLASSIFICATION_CRM}`
+      `Classification CRM Server started on port ${PORTS.CLASSIFICATION_CRM} with ${classificationsCount} classifications in database`
     );
   });
 };

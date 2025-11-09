@@ -48,7 +48,12 @@
       "Bash(cmd /c \"taskkill /F /PID 9788\")",
       "Bash(npx kill-port:*)",
       "Bash(del monitoring.db)",
-      "Bash(cmd /c \"timeout /t 8 /nobreak\")"
+      "Bash(cmd /c \"timeout /t 8 /nobreak\")",
+      "Bash(sqlite3:*)",
+      "Bash(cmd /c \"for /f \"tokens=5\" %a in (''netstat -ano ^| findstr /r \":300[0-4]\"'') do taskkill /F /PID %a\")",
+      "Bash(npx tsc:*)",
+      "Bash(cmd /c \"timeout /t 2 /nobreak\")",
+      "Bash(del:*)"
     ],
     "deny": [],
     "ask": []

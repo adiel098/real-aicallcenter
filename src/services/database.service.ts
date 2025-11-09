@@ -11,7 +11,7 @@ export interface LeadRecord {
   alternate_phones?: string; // JSON string of phone array
   name: string;
   email: string;
-  city: string;
+  city?: string;
   source?: string;
   notes?: string;
   created_at?: string;
@@ -330,6 +330,19 @@ class DatabaseService {
       AND medicare_data LIKE ?
     `);
     return stmt.get(`%"medicareNumber":"${medicareNumber}"%`) as UserDataRecord | null;
+  }
+
+  getUserDataByNameAndDOB(name: string, dob: string): UserDataRecord | null {
+    // Search in name field and JSON medicare_data for dateOfBirth
+    const stmt = this.db.prepare(`
+      SELECT * FROM user_data
+      WHERE name = ?
+      AND medicare_data IS NOT NULL
+      AND medicare_data LIKE ?
+      ORDER BY last_updated DESC
+      LIMIT 1
+    `);
+    return stmt.get(name, `%"dateOfBirth":"${dob}"%`) as UserDataRecord | null;
   }
 
   getAllUserData(limit = 100, offset = 0): UserDataRecord[] {
