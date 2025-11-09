@@ -134,15 +134,20 @@ app.post('/', async (req: Request, res: Response) => {
     }
 
     const messageType = body.message.type;
-    const call = body.call;
+
+    // VAPI sends call object in two possible locations:
+    // 1. body.call (some webhook types)
+    // 2. body.message.call (other webhook types like speech-update, transcript, status-update)
+    const call = body.call || body.message?.call;
 
     // DEBUG: Log ALL incoming webhooks to see structure
     logger.info(
       {
         'DEBUG_MESSAGE_TYPE': messageType,
         'DEBUG_HAS_CALL': !!call,
+        'DEBUG_CALL_LOCATION': body.call ? 'body.call' : body.message?.call ? 'body.message.call' : 'none',
+        'DEBUG_CUSTOMER_NUMBER': call?.customer?.number || 'not found',
         'DEBUG_BODY_KEYS': Object.keys(body),
-        'DEBUG_FULL_BODY': JSON.stringify(body, null, 2),
       },
       `🔍 DEBUG: VAPI webhook received - type: ${messageType}`
     );
@@ -153,6 +158,7 @@ app.post('/', async (req: Request, res: Response) => {
         {
           messageType,
           bodyKeys: Object.keys(body),
+          messageKeys: Object.keys(body.message || {}),
         },
         '⚠️  VAPI message received without call object - ignoring'
       );

@@ -1,6 +1,22 @@
 -- VAPI and VICI Monitoring Database Schema
 -- SQLite Database for persistent call tracking, metrics, and analytics
 
+-- Leads Table
+-- Stores all lead information from Lead CRM
+CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    lead_id TEXT UNIQUE NOT NULL,
+    phone_number TEXT UNIQUE NOT NULL,
+    alternate_phones TEXT, -- JSON array of alternate phone numbers
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    city TEXT NOT NULL,
+    source TEXT DEFAULT 'inbound_call',
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Call Records Table
 -- Stores complete VAPI call information
 CREATE TABLE IF NOT EXISTS calls (
@@ -127,6 +143,9 @@ CREATE TABLE IF NOT EXISTS error_logs (
 );
 
 -- Indexes for Performance
+CREATE INDEX IF NOT EXISTS idx_leads_phone ON leads(phone_number);
+CREATE INDEX IF NOT EXISTS idx_leads_email ON leads(email);
+CREATE INDEX IF NOT EXISTS idx_leads_lead_id ON leads(lead_id);
 CREATE INDEX IF NOT EXISTS idx_calls_phone ON calls(phone_number);
 CREATE INDEX IF NOT EXISTS idx_calls_start_time ON calls(start_time);
 CREATE INDEX IF NOT EXISTS idx_calls_status ON calls(status);

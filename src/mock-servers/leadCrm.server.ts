@@ -10,9 +10,11 @@ import cors from 'cors';
 import helmet from 'helmet';
 import logger from '../config/logger';
 import { PORTS, HTTP_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../config/constants';
-import { leadsDatabase, findLeadByPhoneNumber, createLead, leadExists } from '../data/leads.data';
+import { leadsDatabase } from '../data/leads.data';
 import { normalizePhoneNumber, isValidPhoneNumber, maskPhoneNumber } from '../utils/phoneNumber.util';
 import { LeadLookupResponse } from '../types/lead.types';
+import databaseService, { LeadRecord } from '../services/database.service';
+import { Lead } from '../types/lead.types';
 
 // Initialize Express app
 const app = express();
@@ -21,6 +23,63 @@ const app = express();
 app.use(helmet()); // Security headers
 app.use(cors()); // Enable CORS for all origins
 app.use(express.json()); // Parse JSON request bodies
+
+/**
+ * Migrate in-memory leads to database on startup
+ * This ensures existing test data is available in the database
+ */
+function migrateLeadsToDatabase() {
+  logger.info({ count: leadsDatabase.length }, 'Migrating in-memory leads to database');
+
+  let migrated = 0;
+  let skipped = 0;
+
+  for (const lead of leadsDatabase) {
+    try {
+      // Check if lead already exists in database
+      if (databaseService.leadExists(lead.phoneNumber)) {
+        skipped++;
+        continue;
+      }
+
+      // Insert lead into database
+      const leadRecord: LeadRecord = {
+        lead_id: lead.leadId,
+        phone_number: lead.phoneNumber,
+        alternate_phones: lead.alternatePhones ? JSON.stringify(lead.alternatePhones) : undefined,
+        name: lead.name,
+        email: lead.email,
+        city: lead.city,
+        source: lead.source,
+        notes: lead.notes,
+      };
+
+      databaseService.insertLead(leadRecord);
+      migrated++;
+    } catch (error: any) {
+      logger.error({ error: error.message, leadId: lead.leadId }, 'Failed to migrate lead');
+    }
+  }
+
+  logger.info({ migrated, skipped }, `Lead migration complete: ${migrated} migrated, ${skipped} skipped`);
+}
+
+/**
+ * Convert LeadRecord from database to Lead type
+ */
+function convertLeadRecordToLead(record: LeadRecord): Lead {
+  return {
+    leadId: record.lead_id,
+    phoneNumber: record.phone_number,
+    alternatePhones: record.alternate_phones ? JSON.parse(record.alternate_phones) : undefined,
+    name: record.name,
+    email: record.email,
+    city: record.city,
+    createdAt: record.created_at || new Date().toISOString(),
+    source: record.source || 'inbound_call',
+    notes: record.notes || '',
+  };
+}
 
 /**
  * Request logging middleware
@@ -79,9 +138,9 @@ app.get('/api/leads/:phoneNumber', (req: Request, res: Response) => {
   const normalizedPhone = normalizePhoneNumber(phoneNumber);
 
   // Search for lead in database
-  const lead = findLeadByPhoneNumber(normalizedPhone);
+  const leadRecord = databaseService.getLeadByPhone(normalizedPhone);
 
-  if (!lead) {
+  if (!leadRecord) {
     requestLogger.info({ phoneNumber: maskPhoneNumber(normalizedPhone) }, 'Lead not found');
 
     const response: LeadLookupResponse = {
@@ -94,6 +153,8 @@ app.get('/api/leads/:phoneNumber', (req: Request, res: Response) => {
   }
 
   // Lead found successfully
+  const lead = convertLeadRecordToLead(leadRecord);
+
   requestLogger.info(
     {
       phoneNumber: maskPhoneNumber(normalizedPhone),
@@ -124,15 +185,21 @@ app.get('/api/leads', (_req: Request, res: Response) => {
 
   requestLogger.debug('Fetching all leads');
 
+  // Get query parameters for pagination
+  const limit = parseInt(_req.query.limit as string) || 100;
+  const offset = parseInt(_req.query.offset as string) || 0;
+
   // Return all leads from database
-  const count = leadsDatabase.length;
+  const leadRecords = databaseService.getAllLeads(limit, offset);
+  const leads = leadRecords.map(convertLeadRecordToLead);
+  const count = leads.length;
 
   requestLogger.info({ count }, 'Retrieved all leads');
 
   return res.status(HTTP_STATUS.OK).json({
     success: true,
     count,
-    leads: leadsDatabase,
+    leads: leads,
   });
 });
 

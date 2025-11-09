@@ -4,6 +4,20 @@ import { readFileSync } from 'fs';
 import logger from '../config/logger';
 
 // Database types
+export interface LeadRecord {
+  id?: number;
+  lead_id: string;
+  phone_number: string;
+  alternate_phones?: string; // JSON string of phone array
+  name: string;
+  email: string;
+  city: string;
+  source?: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface CallRecord {
   id?: number;
   call_id: string;
@@ -134,6 +148,114 @@ class DatabaseService {
       this.log.error({ error }, 'Failed to initialize database schema');
       throw error;
     }
+  }
+
+  // ============= LEADS =============
+
+  insertLead(lead: LeadRecord): number {
+    const stmt = this.db.prepare(`
+      INSERT INTO leads (
+        lead_id, phone_number, alternate_phones, name, email, city, source, notes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const result = stmt.run(
+      lead.lead_id,
+      lead.phone_number,
+      lead.alternate_phones || null,
+      lead.name,
+      lead.email,
+      lead.city,
+      lead.source || 'inbound_call',
+      lead.notes || null
+    );
+
+    return result.lastInsertRowid as number;
+  }
+
+  getLeadByPhone(phoneNumber: string): LeadRecord | null {
+    // Search by primary phone
+    let stmt = this.db.prepare('SELECT * FROM leads WHERE phone_number = ?');
+    let lead = stmt.get(phoneNumber) as LeadRecord | null;
+
+    if (lead) return lead;
+
+    // Search by alternate phones (JSON array contains the phone number)
+    stmt = this.db.prepare(`
+      SELECT * FROM leads
+      WHERE alternate_phones IS NOT NULL
+      AND alternate_phones LIKE ?
+    `);
+    lead = stmt.get(`%"${phoneNumber}"%`) as LeadRecord | null;
+
+    return lead;
+  }
+
+  getLeadById(leadId: string): LeadRecord | null {
+    const stmt = this.db.prepare('SELECT * FROM leads WHERE lead_id = ?');
+    return stmt.get(leadId) as LeadRecord | null;
+  }
+
+  getLeadByEmail(email: string): LeadRecord | null {
+    const stmt = this.db.prepare('SELECT * FROM leads WHERE email = ?');
+    return stmt.get(email) as LeadRecord | null;
+  }
+
+  getAllLeads(limit = 100, offset = 0): LeadRecord[] {
+    const stmt = this.db.prepare(`
+      SELECT * FROM leads ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `);
+    return stmt.all(limit, offset) as LeadRecord[];
+  }
+
+  updateLead(leadId: string, updates: Partial<LeadRecord>): void {
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (updates.name !== undefined) {
+      fields.push('name = ?');
+      values.push(updates.name);
+    }
+    if (updates.email !== undefined) {
+      fields.push('email = ?');
+      values.push(updates.email);
+    }
+    if (updates.city !== undefined) {
+      fields.push('city = ?');
+      values.push(updates.city);
+    }
+    if (updates.alternate_phones !== undefined) {
+      fields.push('alternate_phones = ?');
+      values.push(updates.alternate_phones);
+    }
+    if (updates.source !== undefined) {
+      fields.push('source = ?');
+      values.push(updates.source);
+    }
+    if (updates.notes !== undefined) {
+      fields.push('notes = ?');
+      values.push(updates.notes);
+    }
+
+    if (fields.length === 0) return;
+
+    fields.push('updated_at = CURRENT_TIMESTAMP');
+    values.push(leadId);
+
+    const stmt = this.db.prepare(`
+      UPDATE leads SET ${fields.join(', ')} WHERE lead_id = ?
+    `);
+
+    stmt.run(...values);
+  }
+
+  deleteLead(leadId: string): void {
+    const stmt = this.db.prepare('DELETE FROM leads WHERE lead_id = ?');
+    stmt.run(leadId);
+  }
+
+  leadExists(phoneNumber: string): boolean {
+    return this.getLeadByPhone(phoneNumber) !== null;
   }
 
   // ============= CALL RECORDS =============
