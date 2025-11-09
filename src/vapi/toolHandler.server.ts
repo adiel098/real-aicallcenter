@@ -176,7 +176,7 @@ app.post('/', async (req: Request, res: Response) => {
     // Route based on message type
     switch (messageType) {
       case 'status-update':
-        await handleStatusUpdate(body, eventLogger);
+        await handleStatusUpdate(body, call, eventLogger);
         break;
 
       case 'transcript':
@@ -222,8 +222,8 @@ app.post('/', async (req: Request, res: Response) => {
  * Event Handler Functions
  */
 
-async function handleStatusUpdate(body: any, eventLogger: any): Promise<void> {
-  const { message, call } = body;
+async function handleStatusUpdate(body: any, call: any, eventLogger: any): Promise<void> {
+  const { message } = body;
   const { status, endedReason } = message;
 
   if (status === 'in-progress') {
