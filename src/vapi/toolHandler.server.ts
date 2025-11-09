@@ -95,17 +95,9 @@ app.use((req: Request, res: Response, next) => {
     server: 'vapi-handler',
   });
 
-  // Suppress "Incoming request" logs for webhook endpoints to reduce noise
-  // Only log non-webhook requests (health checks, API endpoints, etc.)
-  if (req.path !== '/' && !req.path.startsWith('/api/vapi/events/')) {
-    requestLogger.info(
-      {
-        method: req.method,
-        path: req.path,
-      },
-      'Incoming request'
-    );
-  }
+  // Suppress ALL "Incoming request" logs to keep logs clean
+  // Request logging is disabled for all endpoints
+  // Errors and important events are still logged
 
   (res as any).requestLogger = requestLogger;
   next();
@@ -472,6 +464,22 @@ function handleUserInterrupted(body: any, eventLogger: any): void {
 
 async function handleEndOfCallReport(body: any, eventLogger: any): Promise<void> {
   const { message, call } = body;
+
+  // DEFENSIVE: Validate call object and id before processing
+  if (!call || !call.id) {
+    eventLogger.error(
+      {
+        hasCall: !!call,
+        hasCallId: !!call?.id,
+        callKeys: call ? Object.keys(call) : [],
+        bodyKeys: Object.keys(body),
+        messageType: message?.type,
+      },
+      '❌ end-of-call-report missing call object or call.id - cannot save to database'
+    );
+    return;
+  }
+
   const {
     endedReason,
     summary,
@@ -519,7 +527,15 @@ async function handleEndOfCallReport(body: any, eventLogger: any): Promise<void>
   } catch (dbError: any) {
     eventLogger.error({
       error: dbError.message,
-      callId: call.id
+      stack: dbError.stack,
+      callId: call?.id,
+      callExists: !!call,
+      callIdExists: !!call?.id,
+      hasRecordingUrl: !!recordingUrl,
+      hasCosts: !!costs,
+      hasTranscript: !!transcript,
+      hasSummary: !!summary,
+      messageCount: messages?.length,
     }, '❌ Failed to save end-of-call data to database');
   }
 }
