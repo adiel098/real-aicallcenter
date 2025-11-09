@@ -175,7 +175,7 @@ app.post('/', async (req: Request, res: Response) => {
         break;
 
       case 'end-of-call-report':
-        handleEndOfCallReport(body, eventLogger);
+        await handleEndOfCallReport(body, eventLogger);
         break;
 
       default:
@@ -426,7 +426,7 @@ function handleUserInterrupted(body: any, eventLogger: any): void {
   eventLogger.info('⚠️  USER INTERRUPTED ASSISTANT');
 }
 
-function handleEndOfCallReport(body: any, eventLogger: any): void {
+async function handleEndOfCallReport(body: any, eventLogger: any): Promise<void> {
   const { message, call } = body;
   const {
     endedReason,
@@ -459,6 +459,24 @@ function handleEndOfCallReport(body: any, eventLogger: any): void {
   if (transcript) {
     eventLogger.info('   Full Transcript:');
     eventLogger.info(transcript);
+  }
+
+  // Save end-of-call data to database
+  try {
+    await databaseService.updateCall(call.id, {
+      recording_url: recordingUrl,
+      total_cost: costs?.total,
+      transcript: transcript,
+      summary: summary,
+      message_count: messages?.length
+    });
+
+    eventLogger.info({ callId: call.id }, '✅ End-of-call data saved to database');
+  } catch (dbError: any) {
+    eventLogger.error({
+      error: dbError.message,
+      callId: call.id
+    }, '❌ Failed to save end-of-call data to database');
   }
 }
 
