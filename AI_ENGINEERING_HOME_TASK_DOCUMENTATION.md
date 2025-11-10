@@ -138,27 +138,29 @@ The AI agent operates in a **finite state machine** with the following states:
 
 
 
-**State Transition Triggers:**
+**State Transition Triggers (as per Task.txt: Idle → Pre-Connect → Connected → API Disposition → Next Call):**
 
 | From State | To State | Trigger | Implementation |
 |------------|----------|---------|----------------|
-| READY | CONNECTED | Inbound caller connects via Twilio/VAPI | `POST / (status-update: in-progress)` |
-| CONNECTED | SCREENING | AI begins identity verification | Lead CRM lookup initiated |
-| SCREENING | CONVERSATION | Caller identity verified, shows interest | `check_lead` returns match |
-| CONVERSATION | DISPOSITION | `classify_and_save_user` tool completes | Returns QUALIFIED/NOT_QUALIFIED result |
-| DISPOSITION | READY | Call ends (hang up or transfer) | `POST / (status-update: ended)`, `callStateService.endCallSession()` |
-| CONVERSATION | READY | Caller not interested or hangs up | Disposition NI sent, call ends |
+| **Idle** | **Pre-Connect** | Inbound call rings, VAPI receives webhook | System allocates resources, prepares session |
+| **Pre-Connect** | **Connected** | Call answered, SIP/WebRTC connection established | `POST / (status-update: in-progress)`, session created |
+| **Connected** | **API Disposition** | Classification complete (QUALIFIED/NOT_QUALIFIED) | `classify_and_save_user` tool returns result |
+| **API Disposition** | **Next Call** (Idle) | Disposition sent to VICI, call ends | `POST /dispositions` to VICI, `POST / (status-update: ended)`, return to Idle |
+
+**Additional State Transitions:**
+
+| From State | To State | Trigger | Why |
+|------------|----------|---------|-----|
+| Connected | Idle | Caller not interested or hangs up early | Skip disposition, end call immediately |
+| Pre-Connect | Idle | Call not answered or connection fails | Timeout, return to idle without processing |
 
 **Critical State Logic:**
 
-Each state has specific validation rules and transition criteria:
-
-1. **READY**: AI idle, listening for VAPI webhooks
-2. **CONNECTED**: Session created, callId tracked in database
-3. **SCREENING**: Lead CRM verification - 2 attempts max before ending call
-4. **CONVERSATION**: Medicare data collection with session persistence
-5. **DISPOSITION**: Classification complete, send to VICI once (idempotent)
-6. **Return to READY**: Session closed, ready for next call
+1. **Idle**: AI waiting for inbound calls, all resources available
+2. **Pre-Connect**: Call ringing, allocating session resources, preparing Lead CRM lookup
+3. **Connected**: Active conversation—identity verification, interest check, Medicare data collection
+4. **API Disposition**: Classification complete, sending result to VICI (SALE/NQI/NI/NA/DC)
+5. **Next Call (Return to Idle)**: Call ended, session closed, ready for next caller
 
 All transitions logged to SQLite for audit trails.
 
@@ -348,9 +350,7 @@ Four main tables: **call_sessions** (callId, phoneNumber, timestamps, finalDispo
 
 **Production Migration Path**: SQLite → PostgreSQL with connection pooling (pgBouncer)
 
-**Data Retention Strategy:**
 
-Call sessions: 90 days hot storage, then 7 years cold archive (compliance). User Medicare data: Retained while active, purged on opt-out. Classifications: 2 years for analytics. Tool logs: 30 days. PII (SSN, MBI) encrypted with AES-256, keys stored separately.
 
 ---
 
