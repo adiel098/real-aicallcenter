@@ -19,7 +19,7 @@ A production-ready voice agent system for Medicare eligibility verification. Bui
 ## 📁 Project Structure
 
 Key files (TypeScript microservices):
-- `src/vapi/toolHandler.server.ts` - VAPI webhook handler (4 tools exposed)
+- `src/vapi/toolHandler.server.ts` - VAPI webhook handler (10 tools exposed)
 - `src/mock-servers/leadCrm.server.ts` - Lead CRM API (name/city verification)
 - `src/mock-servers/userDataCrm.server.ts` - UserData CRM (Medicare info)
 - `src/mock-servers/classificationCrm.server.ts` - Eligibility classification + VICI disposition
@@ -105,14 +105,23 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
 
 1. **Create a new Assistant** in the VAPI Dashboard (https://dashboard.vapi.ai)
 
-2. **Add the following 4 tools** to your assistant (copy from `/api/vapi/tools` endpoint):
+2. **Add the following 10 tools** to your assistant (copy from `/api/vapi/tools` endpoint):
 
+   **Core Workflow Tools:**
    - `check_lead` - Verify caller is in leads database (name + city match)
    - `get_user_data` - Retrieve Medicare member demographics
    - `update_user_data` - Save collected Medicare information
    - `classify_and_save_user` - **Atomic operation**: Classify eligibility → Save to DB → Send VICI disposition (SALE/NQI)
 
-   **Simplified 4-tool workflow** (down from original 10 tools - removed classify_user and save_classification_result)
+   **Advanced Features:**
+   - `validate_medicare_eligibility` - SSN → MBI → Insurance validation with retry logic
+   - `schedule_callback` - Schedule callback through VICI (for failures or after-hours)
+   - `transfer_call` - Transfer qualified callers to human agent
+
+   **Additional Utilities:**
+   - `send_form_link_sms` - Send SMS with data collection form
+   - `find_user_by_medicare_number` - Lookup user by MBI
+   - `find_user_by_name_dob` - Lookup user by name and date of birth
 
 3. **Configure Server URL** for each tool:
    ```
@@ -159,13 +168,19 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
 
    5. **Update data:** Use update_user_data to save collected information
 
-   6. **Classify eligibility:** Use classify_and_save_user (atomic operation):
+   6. **Optional - Validate Medicare:** Use validate_medicare_eligibility if needed:
+      - Collects SSN last 4 + DOB
+      - Verifies through Medicare API → Returns MBI
+      - Retry logic: Up to 3 attempts
+      - After failures: Use schedule_callback
+
+   7. **Classify eligibility:** Use classify_and_save_user (atomic operation):
       - Binary matching: ALL 4 criteria must be met
       - Criteria: (1) Has Medicare plan (2) Plan covers vision (Advantage/B/C) (3) Has colorblindness (4) Has MBI
-      - QUALIFIED → Score 100 → SALE disposition sent to VICI → Transfer to human agent
+      - QUALIFIED → Score 100 → SALE disposition sent to VICI → Use transfer_call to agent
       - NOT_QUALIFIED → Score 0 → NQI disposition sent to VICI → End call politely
 
-   7. **Close professionally:** Thank them for their time
+   8. **Close professionally:** Thank them for their time
 
    **Business Hours:** 9:00am - 5:45pm EST, Monday-Friday
    - After-hours calls: Politely explain hours and use schedule_callback
