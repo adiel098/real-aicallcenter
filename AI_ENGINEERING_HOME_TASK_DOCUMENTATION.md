@@ -338,6 +338,26 @@ The system automatically determines and sends dispositions based on call outcome
 
 
 
+**API Implementation Details:**
+
+**Endpoint**: `POST http://vici-server:3004/dispositions`
+
+**Request Format**:
+```json
+{
+  "callId": "call_abc123",
+  "phoneNumber": "+972501234001",
+  "disposition": "SALE",
+  "campaign": "medicare_eligibility",
+  "agentId": "8001",
+  "timestamp": "2025-11-10T14:30:00Z"
+}
+```
+
+**Response**: `200 OK` with disposition ID, or `500` on failure (triggers retry).
+
+**Authentication**: VICI API key in header (`X-VICI-API-Key`). Production uses OAuth2 with token refresh.
+
 **Design Decision: All-in-One Tool**
 
 **Why**: Previous design had 3 separate tools (`classify_user`, `save_classification_result`, `send_vici_disposition`), requiring VAPI to call them in sequence. This created:
@@ -351,7 +371,19 @@ The system automatically determines and sends dispositions based on call outcome
 
 **SSN → MBI → Insurance Validation (3-Step Process):**
 
-Step 1: AI collects SSN + DOB → Medicare API's verify-member endpoint returns MBI. Step 2: check-coverage endpoint validates MBI + plan level for vision benefits. Step 3: System correlates Medicare data with colorblindness status from UserData CRM. All three steps must succeed for QUALIFIED (100 points).
+**Step 1: SSN Verification**
+
+AI collects SSN + DOB from caller → Backend calls Medicare API.
+
+
+**Step 2: Coverage Validation**
+
+Backend validates MBI + plan level for vision benefits.
+
+
+**Step 3: Correlation with UserData**
+
+System correlates Medicare data (plan, MBI, coverage) with colorblindness status from UserData CRM. All three steps must succeed for QUALIFIED (100 points).
 
 **Retry Strategy:**
 
