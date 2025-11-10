@@ -21,26 +21,27 @@
 
 ### 1.1 End-to-End Logic
 
-The Alex AI / VICI Integration system orchestrates a **complete Medicare eligibility verification workflow** from first contact to final disposition. The system flow is:
+The Alex AI / VICI Integration system orchestrates a **complete Medicare eligibility verification workflow** for incoming callers from first contact to final disposition. The system flow is:
 
 **System Flow:**
-1. VICI Outbound Dialer initiates call from campaign list
-2. VAPI Voice Agent (AlexAI) converses with caller, collects Medicare data
-3. CRM Systems (Lead, UserData, Classification) validates, stores, classifies eligibility
-4. VICI Disposition API records call outcome (SALE, NQI, NI, etc.)
-5. Next Action: Transfer to human agent OR end call
+1. Incoming caller dials inbound phone number (+972 033824127)
+2. Initial screening (name and city verification) via Lead CRM
+3. VAPI Voice Agent (AlexAI) converses with caller, collects Medicare data
+4. CRM Systems (Lead, UserData, Classification) validates, stores, classifies eligibility
+5. VICI Disposition API records call outcome (SALE, NQI, NI, etc.)
+6. Next Action: Transfer to human agent OR end call
 
 **Key Flow Stages:**
 
-1. **VICI Initiates Call**: Outbound campaign dials phone number from lead list
-2. **Agent Assignment**: VICI scans for available AI agents (extensions 8001-8006)
-3. **Call Connected**: First available AI agent receives call via SIP/WebRTC
-4. **Status Detection**: AI determines call state (live person, voicemail, busy, dead air, etc.)
-5. **Live Conversation**: If live person, AI collects Medicare data and validates eligibility
+1. **Inbound Call Received**: Caller dials inbound number, routed via Twilio to VAPI
+2. **AI Agent Answers**: AlexAI receives call via SIP/WebRTC connection
+3. **Initial Screening**: AI verifies caller identity using Lead CRM (name + city match)
+4. **Status Detection**: AI determines if caller is live person (already connected)
+5. **Live Conversation**: If verified and interested, AI collects Medicare data and validates eligibility
 6. **Classification**: Binary matching determines QUALIFIED (100 points) or NOT_QUALIFIED (0 points)
 7. **Disposition Sent**: Automatic disposition to VICI (SALE for qualified, NQI for not qualified)
 8. **Next Action**: Transfer to human agent (qualified) OR end call politely (not qualified)
-9. **Return to Idle**: AI agent returns to ready state, awaits next call
+9. **Return to Ready**: AI agent returns to ready state, awaits next inbound call
 
 ### 1.2 Integration Layers
 
@@ -95,13 +96,13 @@ The system consists of **5 distinct integration layers**, each with specific res
 
 #### **Layer 5: VICI Dialer Integration (Port 3004)**
 
-- **Purpose**: Campaign management and call disposition tracking
+- **Purpose**: Call disposition tracking and callback scheduling for inbound calls
 - **Endpoints**:
   - `POST /dispositions`: Record call outcome (SALE, NQI, NI, NA, AM, DC, B, DAIR)
   - `POST /callbacks`: Schedule future callback
-  - `GET /campaigns`: Retrieve active campaign details
-- **Responsibility**: Maintain dialer state, schedule retries, track agent performance
-- **Why This Layer**: VICI is the "traffic controller" for all outbound calling; dispositions inform which leads to retry, which to remove, which to escalate
+  - `GET /campaigns`: Retrieve campaign settings (if applicable)
+- **Responsibility**: Receive dispositions after inbound call completion, track call outcomes, manage callback scheduling
+- **Why This Layer**: VICI acts as the central disposition repository; after each inbound call, the system reports the outcome to VICI for tracking, analytics, and potential follow-up scheduling
 
 ### 1.3 Architectural Philosophy
 
@@ -141,12 +142,12 @@ The AI agent operates in a **finite state machine** with the following states:
 
 | From State | To State | Trigger | Implementation |
 |------------|----------|---------|----------------|
-| IDLE | PRE-CONNECT | VICI sends call to agent extension | `POST / (status-update: in-progress)` |
-| PRE-CONNECT | CONNECTED | SIP connection established | VAPI sends `call.status = 'in-progress'` |
-| CONNECTED | IDLE | Voicemail/Busy/Dead Air detected | Auto-disposition (AM/B/DAIR), call ends |
-| CONNECTED | CONVERSATION | Live person detected | `callStatusDetectionService.detectLivePerson()` |
+| READY | CONNECTED | Inbound caller connects via Twilio/VAPI | `POST / (status-update: in-progress)` |
+| CONNECTED | SCREENING | AI begins identity verification | Lead CRM lookup initiated |
+| SCREENING | CONVERSATION | Caller identity verified, shows interest | `check_lead` returns match |
 | CONVERSATION | DISPOSITION | `classify_and_save_user` tool completes | Returns QUALIFIED/NOT_QUALIFIED result |
-| DISPOSITION | NEXT CALL | Call ends (hang up or transfer) | `POST / (status-update: ended)`, `callStateService.endCallSession()` |
+| DISPOSITION | READY | Call ends (hang up or transfer) | `POST / (status-update: ended)`, `callStateService.endCallSession()` |
+| CONVERSATION | READY | Caller not interested or hangs up | Disposition NI sent, call ends |
 
 **Critical State Logic:**
 
@@ -164,47 +165,25 @@ VAPI provides built-in voicemail detection using advanced ML models. Our impleme
 
 
 
-**Decision Logic:**
-- **Leave message**: Only on 1st attempt, if beep detected, box not full
-- **Disposition**: Always AM, even if no message left
-- **Next action**: Return to IDLE
+**Note**: For inbound calls, voicemail/busy/dead air detection is not typically needed since the caller has already connected. However, the system can detect:
 
-**2. Dead Air (DAIR)**
+**1. Call Connection Issues (DC - Disconnected)**
 
+Covers scenarios during inbound call:
+- Caller hangs up abruptly
+- Network drops connection
+- Technical failure mid-conversation
 
+**Implementation**: VAPI detects disconnect events, backend logs disposition
 
-**Implementation**: VAPI tracks silence duration, sends in call events
+**2. Live Person Verification**
 
-**3. Busy Signal (B)**
+Since inbound calls are already answered, the system focuses on:
+- Verifying caller identity via Lead CRM
+- Confirming caller interest in the program
+- Detecting early hang-ups or disinterest
 
-
-
-**Implementation**: Handled by VAPI telephony layer, reported in status update
-
-**4. Disconnected (DC)**
-
-Covers multiple scenarios:
-- Immediate disconnect (line not in service)
-- Ring then fast busy (number changed)
-- Fax tone detection (2100 Hz)
-
-
-
-**5. No Answer (NA)**
-
-
-
-**Implementation**: VAPI tracks ring duration, timeout at 30s
-
-**6. Live Person (LIVE_PERSON)**
-
-
-
-**7. IVR vs Real Voicemail**
-
-
-
-**Decision**: If IVR detected → Navigate menus OR mark NA and retry later
+**Implementation**: VAPI conversation management tracks engagement signals
 
 ### 2.3 Twilio/VAPI vs Backend Responsibilities
 
@@ -229,7 +208,7 @@ Covers multiple scenarios:
 - **VAPI handles "voice stuff"**: Audio processing, speech understanding, conversation flow
 - **Backend handles "business stuff"**: Data validation, eligibility rules, CRM updates
 - **Benefit**: Each layer focuses on its expertise, easier to test and maintain
-- **Example**: VAPI detects voicemail → Backend decides whether to leave message based on business rules (1st attempt only, campaign settings, etc.)
+- **Example**: VAPI detects caller hang-up → Backend logs appropriate disposition (NI if during interest check, DC if unexpected disconnect)
 
 **Critical Handoff Points:**
 
@@ -251,14 +230,14 @@ Covers multiple scenarios:
 
 | Code | Full Name | Trigger | Next Action |
 |------|-----------|---------|-------------|
-| **SALE** | Sale/Qualified | All 4 criteria met (plan + coverage + colorblindness + MBI) | Transfer to agent 2002 |
-| **NQI** | Not Qualified Insurance | Failed eligibility (missing plan, no coverage, no colorblindness, no MBI) | End call politely |
-| **NI** | Not Interested | User declines program during interest check | End call, mark DNC |
-| **NA** | No Answer | Rings 30+ seconds OR after-hours call | Retry in campaign |
-| **AM** | Answering Machine | Voicemail detected | Leave message (1st attempt), retry |
-| **DC** | Disconnected | Immediate disconnect, fax tone, line not in service | Remove from list |
-| **B** | Busy | Busy signal detected | Retry in 30 minutes |
-| **DAIR** | Dead Air | 6+ seconds silence, no response to "hello" | Retry, possible bad number |
+| **SALE** | Sale/Qualified | All 4 criteria met (plan + coverage + colorblindness + MBI) | Transfer to human agent for fulfillment |
+| **NQI** | Not Qualified Insurance | Failed eligibility (missing plan, no coverage, no colorblindness, no MBI) | End call politely, log in VICI |
+| **NI** | Not Interested | Caller declines program during interest check | End call, mark DNC in VICI |
+| **NA** | No Answer | After-hours call (outside 9am-5:45pm EST) | Log in VICI for callback scheduling |
+| **AM** | Answering Machine | Not applicable for inbound calls | N/A (outbound only) |
+| **DC** | Disconnected | Call dropped or technical failure | Log technical issue in VICI |
+| **B** | Busy | Not applicable for inbound calls | N/A (outbound only) |
+| **DAIR** | Dead Air | Not applicable for inbound calls | N/A (outbound only) |
 
 **Automatic Disposition Logic:**
 
@@ -330,23 +309,20 @@ Covers multiple scenarios:
 
 ## 4. Conversational Intelligence
 
-### 4.1 Voicemail Detection & Analysis
+### 4.1 Call Quality & Engagement Detection
 
-**Multi-Layer Voicemail Detection:**
+**For Inbound Calls:**
 
-VAPI provides ML-based voicemail detection, but our system adds **business logic** on top:
+Since callers have already connected, the focus shifts from detecting voicemail/busy signals to maintaining conversation quality:
 
+**Engagement Signals Monitored:**
+- Active participation in conversation
+- Response to AI prompts and questions
+- Early hang-up detection
+- Background noise or poor audio quality
+- Caller frustration or confusion signals
 
-
-**Voicemail Message Script:**
-
-
-
-**IVR Detection:**
-
-
-
-**Decision Tree:**
+**Implementation**: VAPI tracks these engagement metrics and the backend uses them to optimize conversation flow and determine if human handover is needed.
 
 
 
@@ -525,14 +501,8 @@ Current implementation handles **10-20 concurrent calls** (SQLite limitation). F
 - PostgreSQL with connection pooling
 - Redis for distributed session storage
 - Horizontal auto-scaling (2-20 instances)
-- Prometheus + Grafana monitoring
-- PagerDuty alerting
+- **Monitoring**: Postman for API testing, Winston/Morgan for logging, or Prometheus + Grafana for production-grade monitoring
+- **Alerting**: Email/Slack notifications for development, or PagerDuty for enterprise on-call management
 
-**Inbound Phone Number**: +1 (XXX) XXX-XXXX (configured in VAPI dashboard)
+**Inbound Phone Number**: +972 033824127 (configured in VAPI dashboard)
 
----
-
-**Document Version**: 1.0
-**Last Updated**: 2025-11-10
-**Author**: AI Engineering Candidate
-**Contact**: [Your Contact Info]
