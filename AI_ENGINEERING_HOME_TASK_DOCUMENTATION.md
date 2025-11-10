@@ -175,47 +175,55 @@ All transitions logged to SQLite for audit trails.
 
 #### **Call Event Listener Design**
 
-The call event listener monitors audio stream characteristics to classify call state within first 6 seconds. Uses multi-layered detection:
+The call event listener monitors audio stream characteristics to classify call state within first 6 seconds. **VAPI/Twilio handle audio analysis automatically; we implement business logic to interpret their webhooks.**
 
 **1. Live Person Detection**
 
 Audio signatures: Human speech patterns (vowel formants 300-3000Hz), conversational cadence (pauses 0.5-2s), response to greeting within 2-3s, natural speech disfluencies ("um", "uh").
 
-Implementation: VAPI speech recognition triggers on first spoken word. If greeting receives coherent response within 3s → LIVE. Backend receives `speech-update` webhook with transcript, marks session as "live contact", proceeds to script.
+**Automated by VAPI**: Speech recognition detects human voice, sends `speech-update` webhook with transcript.
+
+**We Implement**: Receive webhook → mark session as "live contact" → proceed to Medicare data collection script.
 
 **2. Voicemail Detection (AM)**
 
 Audio signatures: Pre-recorded tone (flat frequency spectrum, no disfluencies), repeating message pattern, beep tone (1000Hz sustained 0.5-1s), generic greetings ("not available", "leave message").
 
-Implementation: VAPI voicemail detector analyzes first 4-6 seconds. If greeting followed by beep → AM. Backend receives `voicemail-detected` event, decides whether to leave message based on campaign rules, sends AM disposition.
+**Automated by VAPI**: ML-based voicemail detector analyzes first 4-6 seconds, detects beep tone, distinguishes real voicemail vs custom greetings, identifies "mailbox full" or fax tones (1100Hz CNG), sends `voicemail-detected` event.
 
-Advanced logic: Distinguish real voicemail vs custom greetings (named greetings contain proper nouns). Detect "mailbox full" message (keywords: "full", "cannot accept"). Identify fax tone vs beep (fax = 1100Hz CNG tone every 3s).
+**We Implement**: Receive `voicemail-detected` webhook → check campaign rules ("leave message?") → if yes, VAPI leaves pre-recorded message → send AM disposition to VICI → hang up.
 
 **3. Dead Air Detection (DAIR)**
 
 Audio signatures: Silence > 6 seconds (amplitude < -40dB), no speech, no tones, occasional static/hum (50/60Hz electrical noise).
 
-Implementation: If no audio energy detected for 6s after connection → DAIR. Backend timeout triggers after 6s silence, sends DAIR disposition, hangs up. Prevents wasting time on disconnected lines.
+**Automated by VAPI/Twilio**: Audio stream monitoring detects silence (no RTP packets or very low amplitude).
+
+**We Implement**: Set 6-second timeout timer on call connect → if no `speech-update` webhook received within 6s → trigger DAIR disposition → send to VICI → hang up call.
 
 **4. IVR Detection**
 
 Audio signatures: Menu prompts ("Press 1 for...", "Para español..."), DTMF tones (697-1633Hz dual-tone), hold music (compressed audio, repetitive patterns), long pre-recorded messages (> 15s).
 
-Implementation: VAPI detects menu keywords in transcript. If "press" + numbers detected → IVR. Backend receives `ivr-detected` flag, decides whether to navigate (DTMF commands via Twilio API) or hang up with NA disposition.
+**Automated by VAPI**: Transcribes IVR menu prompts via speech recognition, sends `transcript-update` webhook with menu text.
 
-Advanced navigation: Parse IVR menu options from transcript, select relevant option (e.g., "Press 2 for customer service"), send DTMF via Twilio, wait for next prompt, recursively navigate up to 3 menu levels before giving up.
+**We Implement**: Parse transcript for IVR keywords ("press", "option", numbers) → if detected, decide: navigate (send DTMF via Twilio API, recursively handle up to 3 menu levels) OR hang up with NA disposition → send to VICI.
 
 **5. Busy/Fast Busy Detection**
 
 Audio signatures: Busy signal (480Hz + 620Hz, 0.5s on / 0.5s off), fast busy (same tones, 0.25s on / 0.25s off), reorder tone (continuous).
 
-Implementation: Twilio call status webhook sends `busy` or `failed` status before VAPI engagement. Backend immediately sends B disposition, no AI interaction needed.
+**Automated by Twilio**: Detects busy tones at SIP level, sends call status webhook with `busy` or `failed` before VAPI even starts.
+
+**We Implement**: Receive Twilio `busy` webhook → immediately send B disposition to VICI → no AI interaction needed.
 
 **6. Disconnect/Network Issues**
 
 Detection: SIP BYE message, RTP timeout (no packets for 5s), ICMP unreachable, call status `completed` or `failed` from Twilio.
 
-Implementation: VAPI sends `call-ended` webhook. Backend checks call duration: < 5s → DC (immediate disconnect), > 5s but incomplete → DC (mid-call drop). Log for troubleshooting.
+**Automated by Twilio/VAPI**: Detects SIP disconnect signals (BYE message), RTP stream timeouts, network failures, sends `call-ended` webhook.
+
+**We Implement**: Receive `call-ended` webhook → check call duration and context → if < 5s (immediate disconnect) OR incomplete workflow (mid-call drop) → send DC disposition to VICI → log for troubleshooting.
 
 **Event Listener Architecture:**
 
@@ -233,7 +241,12 @@ Twilio SIP Stream → VAPI Audio Processor → Real-time Classification
           Proceed to Script      Leave Message        DAIR Disp    Navigate/Hangup
 ```
 
-Backend subscribes to VAPI webhooks: `speech-update` (live person), `voicemail-detected` (AM), custom timeout (DAIR), `transcript-update` (IVR keyword matching). Each event triggers appropriate disposition and workflow branch.
+**Responsibility Split:**
+
+- **VAPI/Twilio (Automated)**: Audio analysis, signal processing, ML detection, webhook delivery
+- **Backend (We Implement)**: Business logic, disposition routing, campaign rules, timeout management, VICI API calls
+
+Backend subscribes to webhooks: `speech-update` (live), `voicemail-detected` (AM), `call-ended` (DC/B), `transcript-update` (IVR). Sets custom 6s timeout for DAIR. Each event triggers disposition logic and VICI API call.
 
 ### 2.3 Twilio/VAPI vs Backend Responsibilities
 
