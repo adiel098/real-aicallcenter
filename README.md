@@ -1,49 +1,32 @@
-# VAPI Voice Agent with Mock CRM Integration
+# Alex AI / VICI Integration - Medicare Eligibility Voice Agent
 
-A comprehensive voice agent system built with VAPI that integrates with mock CRM servers and VICI dialer to handle inbound calls, verify Medicare eligibility, and classify members for premium eyewear subscription.
+A production-ready voice agent system for Medicare eligibility verification. Built with VAPI and Twilio, integrating with CRM microservices and VICI dialer to handle inbound calls, validate Medicare coverage, and classify members for premium colorblind eyewear subscription.
 
 ## 🏗️ Architecture
 
-The system consists of 5 main components:
+**Business Case:** A healthcare retailer provides premium eyewear for colorblind Medicare members under a subscription program. Incoming callers are screened (name + city), then handed to an AI agent that combines phone system data with CRM demographics to verify Medicare eligibility and classify qualification for the premium subscription. Final outcomes are sent to the retailer CRM.
 
-1. **Lead CRM Server** (Port 3001) - Manages lead information and phone number lookup
-2. **User Data CRM Server** (Port 3002) - Stores and updates Medicare member data
-3. **Classification CRM Server** (Port 3003) - Classifies users as QUALIFIED/NOT_QUALIFIED for premium eyewear
-4. **VICI Mock Server** (Port 3004) - Simulates VICI dialer for call dispositions and callbacks
-5. **VAPI Tool Handler** (Port 3000) - Webhook endpoint for VAPI tool calls
+**System Components (5 Microservices):**
+
+1. **VAPI Tool Handler** (Port 3000) - Webhook endpoint orchestrating all VAPI tool calls and events
+2. **Lead CRM Server** (Port 3001) - Phone number → lead lookup (name, city verification)
+3. **UserData CRM Server** (Port 3002) - Medicare member demographics (plan level, MBI, colorblindness)
+4. **Classification CRM Server** (Port 3003) - Binary matching eligibility engine (QUALIFIED/NOT_QUALIFIED)
+5. **VICI Mock Server** (Port 3004) - Call disposition tracking (SALE, NQI, NI, NA, AM, DC, B, DAIR)
+
+**Inbound Phone Number:** +972 033824127 (configured in VAPI dashboard)
 
 ## 📁 Project Structure
 
-```
-homework2/
-├── src/
-│   ├── config/
-│   │   ├── logger.ts              # Pino logger configuration
-│   │   └── constants.ts           # Application constants
-│   ├── types/
-│   │   ├── lead.types.ts          # Lead type definitions
-│   │   ├── userData.types.ts      # User data type definitions
-│   │   ├── classification.types.ts # Classification type definitions
-│   │   └── vapi.types.ts          # VAPI webhook type definitions
-│   ├── utils/
-│   │   └── phoneNumber.util.ts    # Phone number utilities
-│   ├── data/
-│   │   ├── leads.data.ts          # Mock lead data
-│   │   ├── userData.data.ts       # Mock user data
-│   │   └── classifications.data.ts # Classification storage
-│   ├── services/
-│   │   └── vapi.service.ts        # CRM API service layer
-│   ├── mock-servers/
-│   │   ├── leadCrm.server.ts      # Lead CRM API
-│   │   ├── userDataCrm.server.ts  # User Data CRM API
-│   │   └── classificationCrm.server.ts # Classification CRM API
-│   └── vapi/
-│       └── toolHandler.server.ts  # VAPI webhook handler
-├── .env.example                    # Environment variables template
-├── package.json
-├── tsconfig.json
-└── README.md
-```
+Key files (TypeScript microservices):
+- `src/vapi/toolHandler.server.ts` - VAPI webhook handler (4 tools exposed)
+- `src/mock-servers/leadCrm.server.ts` - Lead CRM API (name/city verification)
+- `src/mock-servers/userDataCrm.server.ts` - UserData CRM (Medicare info)
+- `src/mock-servers/classificationCrm.server.ts` - Eligibility classification + VICI disposition
+- `src/mock-servers/viciMock.server.ts` - VICI dialer mock (disposition logging)
+- `src/types/vici.types.ts` - VICI disposition types (SALE, NQI, NI, NA, AM, DC, B, DAIR)
+- `src/services/vici.service.ts` - VICI API client with retry logic
+- `monitoring.db` - SQLite database (call sessions, user data, classifications, tool executions)
 
 ## 🚀 Quick Start
 
@@ -122,17 +105,14 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
 
 1. **Create a new Assistant** in the VAPI Dashboard (https://dashboard.vapi.ai)
 
-2. **Add the following tools** to your assistant (copy from `/api/vapi/tools` endpoint):
+2. **Add the following 4 tools** to your assistant (copy from `/api/vapi/tools` endpoint):
 
-   - `check_lead` - Check if caller is in leads database
-   - `get_user_data` - Retrieve Medicare member data
-   - `update_user_data` - Update missing Medicare information
-   - `validate_medicare_eligibility` - SSN → MBI → Insurance validation (3-attempt retry logic)
-   - `classify_and_save_user` - Classify eligibility, save result, and send VICI disposition
-   - `schedule_callback` - Schedule callback through VICI (for validation failures or after-hours)
-   - `transfer_call` - Transfer to human agent extension 2002 (after SALE disposition)
+   - `check_lead` - Verify caller is in leads database (name + city match)
+   - `get_user_data` - Retrieve Medicare member demographics
+   - `update_user_data` - Save collected Medicare information
+   - `classify_and_save_user` - **Atomic operation**: Classify eligibility → Save to DB → Send VICI disposition (SALE/NQI)
 
-   **COMPLETE 7-TOOL WORKFLOW**
+   **Simplified 4-tool workflow** (down from original 10 tools - removed classify_user and save_classification_result)
 
 3. **Configure Server URL** for each tool:
    ```
@@ -172,33 +152,20 @@ Visit http://localhost:3000/api/vapi/tools to see the complete tool definitions 
    3. **Get member data:** Use get_user_data to retrieve Medicare information
 
    4. **Collect missing info** (if incomplete):
-      - Medicare plan level (Part A, B, C, D, Advantage)
-      - Colorblindness status (MANDATORY for qualification)
-      - Type of colorblindness (red-green, blue-yellow, total)
-      - Age (informational only)
-      - Current eyewear usage
+      - Medicare plan level (Advantage, Part A, B, C, or D)
+      - MBI (Medicare Beneficiary Identifier)
+      - Colorblindness diagnosis (MANDATORY for qualification)
+      - Age (65+ preferred)
 
    5. **Update data:** Use update_user_data to save collected information
 
-   6. **Validate Medicare:** Use validate_medicare_eligibility tool:
-      - Ask for last 4 digits of SSN
-      - Ask for date of birth (YYYY-MM-DD)
-      - The tool will verify through Medicare APIs
-      - If validation fails, it will retry up to 3 times
-      - After 3 failures, use schedule_callback tool
+   6. **Classify eligibility:** Use classify_and_save_user (atomic operation):
+      - Binary matching: ALL 4 criteria must be met
+      - Criteria: (1) Has Medicare plan (2) Plan covers vision (Advantage/B/C) (3) Has colorblindness (4) Has MBI
+      - QUALIFIED → Score 100 → SALE disposition sent to VICI → Transfer to human agent
+      - NOT_QUALIFIED → Score 0 → NQI disposition sent to VICI → End call politely
 
-   7. **Classify eligibility:** Use classify_and_save_user (after Medicare validated)
-      - Binary matching: ALL criteria must be met (not scoring)
-      - Criteria: Has Medicare + Plan covers vision (Advantage/B/C) + Colorblindness + MBI
-      - QUALIFIED → SALE disposition sent to VICI automatically
-      - NOT_QUALIFIED → NQI disposition sent to VICI automatically
-
-   8. **Next steps:**
-      - If QUALIFIED: Use transfer_call to extension 2002 for enrollment
-      - If NOT_QUALIFIED: Explain result professionally
-      - If callback needed: Use schedule_callback with reason
-
-   9. **Close professionally:** Thank them for their time
+   7. **Close professionally:** Thank them for their time
 
    **Business Hours:** 9:00am - 5:45pm EST, Monday-Friday
    - After-hours calls: Politely explain hours and use schedule_callback
@@ -229,21 +196,16 @@ When you make a call, your terminal will display real-time logs showing:
 
 ## 📊 Call Flow
 
-```mermaid
-graph TD
-    A[Incoming Call] --> B[Extract Phone Number]
-    B --> C{check_lead}
-    C -->|Found| D{get_user_data}
-    C -->|Not Found| E[Ask for Info & Create Lead]
-    E --> D
-    D -->|Complete| F{classify_user}
-    D -->|Incomplete| G[Ask for Missing Fields]
-    G --> H{update_user_data}
-    H --> D
-    F --> I[Tell User Result]
-    I --> J{save_classification_result}
-    J --> K[End Call]
-```
+**Complete Workflow:**
+
+1. Inbound call → VAPI answers → Extract phone number from {{customer.number}}
+2. check_lead tool → Verify caller in Lead CRM (name + city match)
+3. get_user_data tool → Retrieve Medicare demographics
+4. If data incomplete → Ask questions → update_user_data tool → Save to UserData CRM
+5. classify_and_save_user tool (atomic) → Binary matching (4 criteria) → QUALIFIED (100) or NOT_QUALIFIED (0) → Save to Classification CRM → Send VICI disposition (SALE/NQI)
+6. If SALE → Transfer to human agent extension 2002 for fulfillment
+7. If NQI → Explain result politely → End call
+8. All state transitions logged to SQLite (call_sessions, tool_executions tables)
 
 ## 🧪 Testing the APIs
 
@@ -315,18 +277,14 @@ curl -X POST http://localhost:3000/api/vapi/tool-calls \
 
 ## 📝 Sample Data
 
-### Sample Leads (Port 3001)
+### Sample Test Data
 
-The system comes with 8 pre-configured leads:
+The system comes with pre-configured test leads (call these numbers to test):
 
-- `+12025551001` - John Smith (complete data)
-- `+12025551002` - Sarah Johnson (complete data)
-- `+12025551003` - Michael Chen (incomplete data - missing height, weight, allergies, blood type)
-- `+12025551004` - Emily Davis (incomplete data - missing weight, family history)
-- `+12025551005` - David Wilson (complete data)
-- `+12025551006` - Lisa Anderson (very incomplete data)
-- `+12025551007` - James Martinez
-- `+12025551008` - Jennifer Taylor
+- `+972501234001` - John Smith (New York) - **QUALIFIED** (all 4 criteria met: Advantage + vision coverage + colorblindness + MBI) → SALE disposition
+- `+12025551005` - David Wilson (San Francisco) - **NOT_QUALIFIED** (has Advantage plan but no colorblindness diagnosis) → NQI disposition
+- `+15555550100` - Unknown caller (lead not found) → DC disposition
+- After-hours call (outside 9am-5:45pm EST) → NA disposition
 
 ### Classification Criteria
 
@@ -341,51 +299,33 @@ Medicare members are classified using **binary matching** (ALL criteria must be 
 3. ✅ **Has Colorblindness Diagnosis**: MANDATORY - Confirmed diagnosis (any type: red-green, blue-yellow, or total)
 4. ✅ **Medicare Beneficiary Identifier (MBI)**: Valid MBI on file
 
-**Classification Result:**
-- ALL criteria met = **QUALIFIED** (eligible for premium eyewear subscription)
-- ANY criterion fails = **NOT_QUALIFIED**
-- Score returned: 100 (qualified) or 0 (not qualified)
+**Classification Logic:**
+- ALL 4 criteria met = **QUALIFIED** (Score: 100, Disposition: SALE)
+- ANY criterion fails = **NOT_QUALIFIED** (Score: 0, Disposition: NQI)
+- Classification is atomic: classify → save to DB → send VICI disposition (prevents race conditions)
 
-**VICI Integration - All 8 Dispositions:**
+**VICI Integration - Disposition Tracking:**
 
-The system automatically sends dispositions to VICI dialer based on call outcomes:
+The system automatically sends dispositions to VICI dialer (POST to port 3004):
 
-1. **SALE** - Qualified member (all 4 binary criteria met: Medicare plan + Plan covers vision + Colorblindness + MBI) → Transfers to extension 2002
-2. **NQI** - Not Qualified Insurance (doesn't meet Medicare eligibility requirements)
-3. **NI** - Not Interested (caller explicitly declines program)
-4. **NA** - No Answer (rings 30+ seconds without pickup OR after-hours call)
-5. **AM** - Answering Machine (voicemail detected)
-6. **DC** - Disconnected (line disconnected, fax tone, or network issue)
-7. **B** - Busy (busy signal or fast busy)
-8. **DAIR** - Dead Air (6+ seconds silence before first "hello")
+1. **SALE** - Qualified (all 4 criteria met) → Transfers to human agent
+2. **NQI** - Not Qualified Insurance (failed eligibility)
+3. **NI** - Not Interested (caller declines)
+4. **NA** - No Answer (after-hours calls outside 9am-5:45pm EST)
+5. **AM** - Answering Machine (voicemail - VAPI detects automatically)
+6. **DC** - Disconnected (call dropped or technical failure)
+7. **B** - Busy (busy signal - Twilio detects at SIP level)
+8. **DAIR** - Dead Air (6+ seconds silence - backend timeout)
 
-**Call Status Detection:**
-- Automatically detects voicemail, dead air, busy signals, fax tones, and disconnections
-- Sends appropriate disposition codes to VICI
-- No manual intervention required
+**Automatic Disposition Logic:**
 
-**Business Hours Enforcement:**
-- Hours: 9:00am - 5:45pm EST, Monday-Friday
-- After-hours calls automatically receive NA disposition
-- System suggests callback scheduling for after-hours callers
+The classify_and_save_user tool automatically sends SALE (qualified) or NQI (not qualified) based on binary matching result. Other dispositions (NA, AM, DC, B, DAIR) are sent by event listeners when detected.
 
-**AI Agent Extensions:**
-- Assigns calls to available agent extensions: 8001-8006
-- Tracks agent availability and call distribution
-- Each call logs which agent extension handled it
-
-**Medicare Validation Workflow:**
-- Step 1: Collect SSN last 4 + date of birth
-- Step 2: Verify Medicare member via Medicare API → Get MBI
-- Step 3: Validate insurance coverage via Insurance API
-- Retry logic: Up to 3 attempts for API failures
-- After 3 failures: Offers callback scheduling through VICI
-
-**Callback Scheduling:**
-- Automatic callback scheduling via VICI API
-- Triggered by: validation failures, incomplete data, customer request, after-hours
-- Defaults to next business day at 10am EST
-- Tracked per call session
+**VICI API Details:**
+- Endpoint: POST http://localhost:3004/dispositions
+- Payload: {callId, phoneNumber, disposition, campaign, agentId, timestamp}
+- Retry logic: Exponential backoff (1s, 2s, 4s) for transient errors
+- All dispositions logged to monitoring.db for audit trails
 
 ## 🔍 Logging
 
