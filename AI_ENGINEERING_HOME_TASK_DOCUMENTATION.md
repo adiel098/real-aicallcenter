@@ -151,6 +151,17 @@ The AI agent operates in a **finite state machine** with the following states:
 
 **Critical State Logic:**
 
+Each state has specific validation rules and transition criteria:
+
+1. **READY**: AI idle, listening for VAPI webhooks
+2. **CONNECTED**: Session created, callId tracked in database
+3. **SCREENING**: Lead CRM verification - 2 attempts max before ending call
+4. **CONVERSATION**: Medicare data collection with session persistence
+5. **DISPOSITION**: Classification complete, send to VICI once (idempotent)
+6. **Return to READY**: Session closed, ready for next call
+
+All transitions logged to SQLite for audit trails.
+
 
 
 ### 2.2 Call Event Detection
@@ -224,7 +235,37 @@ Since inbound calls are already answered, the system focuses on:
 
 **Disposition Workflow:**
 
-
+```
+┌──────────────────────────────────────────────────────────────┐
+│  classify_and_save_user Tool Called (Atomic Operation)      │
+└────────────────────┬─────────────────────────────────────────┘
+                     │
+                     ▼
+       ┌─────────────────────────────┐
+       │  Calculate Eligibility Score│
+       │  - Medicare plan: Check     │
+       │  - Vision coverage: Check   │
+       │  - Colorblindness: Check    │
+       │  - Has MBI: Check           │
+       └─────────────┬───────────────┘
+                     │
+        ┌────────────┴────────────┐
+        ▼                         ▼
+    Score = 100              Score = 0
+    (QUALIFIED)          (NOT_QUALIFIED)
+        │                         │
+        ▼                         ▼
+  Save to                   Save to
+  Classification DB         Classification DB
+        │                         │
+        ▼                         ▼
+  Send VICI                 Send VICI
+  Disposition: SALE         Disposition: NQI
+        │                         │
+        ▼                         ▼
+  Transfer to               End call politely
+  human agent               ("not qualified")
+```
 
 **8 Disposition Codes:**
 
@@ -241,6 +282,8 @@ Since inbound calls are already answered, the system focuses on:
 
 **Automatic Disposition Logic:**
 
+The system automatically determines and sends dispositions based on call outcomes without requiring manual intervention. When a call completes, the backend analyzes the context to determine which disposition code to send to VICI. First, it checks if the call occurred outside business hours (9am-5:45pm EST), which triggers an NA disposition for callback scheduling. Next, if the caller explicitly declined interest in the program at any point, the system sends an NI disposition and marks them as do-not-call. If the call disconnected unexpectedly before completion—such as a network drop or caller hang-up—the system logs a DC disposition for technical tracking. Finally, when the classification tool completes successfully, it automatically sends either SALE for qualified members (all 4 criteria met) or NQI for those who don't meet eligibility requirements. This automated approach eliminates human error and ensures every call receives proper disposition tracking in VICI.
+
 
 
 **Design Decision: All-in-One Tool**
@@ -256,13 +299,15 @@ Since inbound calls are already answered, the system focuses on:
 
 **SSN → MBI → Insurance Validation (3-Step Process):**
 
-
+Step 1: AI collects SSN + DOB → Medicare API's verify-member endpoint returns MBI. Step 2: check-coverage endpoint validates MBI + plan level for vision benefits. Step 3: System correlates Medicare data with colorblindness status from UserData CRM. All three steps must succeed for QUALIFIED (100 points).
 
 **Retry Strategy:**
 
-
+Up to 3 retries with exponential backoff (1s, 2s, 4s delays) for transient errors. Client errors (400, 422) don't retry—AI asks caller to re-verify data instead. After 3 failures, offer callback via VICI.
 
 **Retry Decision Tree:**
+
+500-series errors: Retry with backoff. 429 rate limit: Wait 5s then retry. 401/403 auth errors: Log alert, don't retry. 400/422 validation errors: Ask caller to re-confirm data, increment counter. After 3 attempts: Explain verification issue, offer callback via VICI.
 
 
 
@@ -270,7 +315,7 @@ Since inbound calls are already answered, the system focuses on:
 
 **Exponential Backoff Implementation:**
 
-
+Wait times double with each retry: 1s → 2s → 4s. Total wait of 7 seconds acts as a circuit breaker. After 3 attempts, stop retrying and offer callback or human transfer.
 
 **Error Categories:**
 
@@ -284,11 +329,13 @@ Since inbound calls are already answered, the system focuses on:
 
 **Graceful Degradation:**
 
-
+If Medicare API fails completely: Collect all available data, save to UserData CRM with "pending validation" flag, schedule callback. If VICI API down: Store disposition locally with "pending sync" flag, background job syncs later. System continues operating with partial functionality instead of crashing.
 
 ### 3.4 Data Persistence Model
 
 **Database Schema (SQLite):**
+
+Four main tables: **call_sessions** (callId, phoneNumber, timestamps, finalDisposition), **user_data** (Medicare info: name, DOB, ssn encrypted, mbi, planLevel, colorblindness), **classifications** (result, score, dispositionSent flag), **tool_executions** (logs all tool calls with JSON parameters/results). Enables full audit trails.
 
 
 
@@ -303,7 +350,7 @@ Since inbound calls are already answered, the system focuses on:
 
 **Data Retention Strategy:**
 
-
+Call sessions: 90 days hot storage, then 7 years cold archive (compliance). User Medicare data: Retained while active, purged on opt-out. Classifications: 2 years for analytics. Tool logs: 30 days. PII (SSN, MBI) encrypted with AES-256, keys stored separately.
 
 ---
 
@@ -330,7 +377,7 @@ Since callers have already connected, the focus shifts from detecting voicemail/
 
 **Early Interest Qualification (Phase 2 of Workflow):**
 
-
+Within 30 seconds post-verification, AI asks: "Does premium eyewear for colorblind Medicare members interest you?" If yes → proceed to data collection. If no → send NI disposition, end call within 60 seconds. Prevents wasting time collecting data from uninterested callers.
 
 **Why Early Exit:**
 
@@ -341,25 +388,25 @@ Since callers have already connected, the focus shifts from detecting voicemail/
 
 **Live Person Engagement Strategies:**
 
-
+Natural pacing with pauses. Explain why data is needed ("I need your MBI to verify vision coverage"). Listen for confusion signals (long pauses, "um"s) and rephrase with examples. Positive reinforcement ("Great, almost done"). Offer human transfer if frustrated. These tactics improve completion rates.
 
 ### 4.3 Interruption Handling & Human Handover
 
 **Interruption Detection:**
 
-VAPI provides `user-interrupted` event when user speaks over assistant:
-
-
+VAPI's user-interrupted event triggers when caller speaks over AI. AI stops, listens, analyzes context. Clarifying questions → answer then resume. Frustration signals ("too long") → offer to speed up, schedule callback, or transfer to human. Interruptions = valuable feedback.
 
 **Human Handover Triggers:**
 
-
+Explicit request ("speak to person") → transfer immediately. Medicare validation fails 3x → offer specialist. Caller qualifies (SALE) → auto-transfer to fulfillment. Severe confusion detected → proactively offer specialist. Prevents abandoned calls.
 
 **Graceful Transfer Script:**
 
-
+"Connecting you with my colleague who specializes in Medicare enrollment. They'll have all our discussion details—no need to repeat anything. Please hold." Uses "colleague" (not "human agent") for collaborative tone.
 
 **Transfer Warm Handoff Data:**
+
+Backend sends comprehensive packet: caller identity, Medicare data (plan, MBI, DOB, colorblindness), classification result, errors, call duration, transfer reason. Appears on agent screen instantly for seamless handover: "Hi John, I see you're interested in colorblind eyewear and enrolled in Medicare Advantage—let's complete enrollment."
 
 
 
@@ -380,13 +427,15 @@ VAPI provides `user-interrupted` event when user speaks over assistant:
 
 **Production Scaling Strategy:**
 
-
+Replace SQLite with PostgreSQL + pgBouncer for connection pooling. Use Redis for distributed session storage (survives server restarts). Deploy on AWS/GCP with auto-scaling (2-20 instances based on load). Load balancer distributes traffic across instances. Replace ngrok with production HTTPS endpoint.
 
 **Scaling Configuration:**
 
-
+Kubernetes auto-scaling: Scale up when CPU > 70% or request queue > 100. Scale down when CPU < 30%. Min 2 instances for redundancy, max 20 for cost control. PostgreSQL read replicas for heavy query loads.
 
 **Horizontal Scaling Considerations:**
+
+Stateless backend design: All session data in Redis, not in-memory. Sticky sessions not needed. Database connection pooling prevents connection exhaustion. VICI/VAPI webhook endpoints must handle requests from any instance.
 
 
 
@@ -394,13 +443,15 @@ VAPI provides `user-interrupted` event when user speaks over assistant:
 
 **Real-Time Metrics Dashboard:**
 
-
+Track: Active calls count, avg call duration, disposition breakdown (SALE/NQI/NI), API response times (Medicare/VICI), error rates, tool execution success rates. Refresh every 30 seconds for real-time visibility.
 
 **Prometheus Metrics (Production):**
 
+Collect: HTTP request latency (p50, p95, p99), database query duration, Redis cache hit/miss rates, VAPI webhook processing time, classification tool execution time, external API error counts.
 
+**Alerting Rules (Email/Slack or PagerDuty):**
 
-**Alerting Rules (PagerDuty/Opsgenie):**
+Alert if: Error rate > 5% for 5min, API latency > 3s, database connections exhausted, Redis down, VICI disposition API failing, Medicare API unavailable. Email/Slack for dev, PagerDuty for production emergencies.
 
 
 
@@ -408,13 +459,15 @@ VAPI provides `user-interrupted` event when user speaks over assistant:
 
 **Business Hours Enforcement:**
 
-
+Operating hours: 9:00am-5:45pm EST, Monday-Friday. Backend checks timestamp on every inbound call. Within hours → process normally. Outside hours → immediate NA disposition + callback offer.
 
 **After-Hours Auto-Disposition:**
 
-
+Call received at 7pm EST → AI says: "Our offices are currently closed (open 9am-5:45pm EST weekdays). May I schedule a callback during business hours?" If yes → collect preferred time, send to VICI scheduling API. If no → polite goodbye, NA disposition logged.
 
 **Callback Scheduling:**
+
+Caller provides preferred date/time → Validate against business hours → POST to VICI `/callbacks` endpoint with phoneNumber, preferredTime, reason ("after-hours call" or "technical validation failure"). VICI queues callback for next available agent slot.
 
 
 
@@ -424,25 +477,27 @@ VAPI provides `user-interrupted` event when user speaks over assistant:
 
 ### 6.1 API Sequence Diagram
 
-
+Inbound Call → VAPI Webhook (POST /) → check_lead tool → Lead CRM (GET /lead/:phone) → get_user_data tool → UserData CRM (GET /user-data/:phone) → validate_medicare_eligibility tool → Medicare API (POST /verify-member, POST /check-coverage) → classify_and_save_user tool → Classification CRM (POST /classify) → VICI Disposition API (POST /dispositions) → Transfer or End Call.
 
 ### 6.2 Local Testing Approach
 
 **Mock APIs & Simulated Calls:**
 
-
+All 5 servers (Lead, UserData, Classification, VICI, Tool Handler) run locally on ports 3000-3004. Mock Medicare API returns hardcoded responses. Use Postman to simulate VAPI webhooks (POST to localhost:3000 with call status/tool requests).
 
 **Mock VAPI Call Simulator:**
 
-
+Script simulates full call lifecycle: Send status-update webhook (in-progress) → Send tool-calls webhooks (check_lead, get_user_data, validate_medicare, classify_and_save_user) → Send status-update (ended). Validates responses and logs results.
 
 **Running Local Tests:**
 
-
+Run `npm run dev:all` to start all 5 servers. Use test script: `npm run test:simulate-call` with test phone numbers (+972501234001 for John Smith QUALIFIED, +12025551005 for David Wilson NOT_QUALIFIED). Verify dispositions logged in VICI mock.
 
 ### 6.3 Production Deployment Checklist
 
 **Environment Variables (.env.production):**
+
+VAPI_API_KEY, VAPI_ASSISTANT_ID, DATABASE_URL (PostgreSQL), REDIS_URL, MEDICARE_API_KEY, VICI_API_URL, NGROK_URL (replaced with production domain), PORT, NODE_ENV=production, LOG_LEVEL=info.
 
 
 
@@ -454,17 +509,6 @@ VAPI provides `user-interrupted` event when user speaks over assistant:
    - Review security audit (`npm audit`)
    - Update CHANGELOG.md
 
-2. **Database Migration**
-   - Backup production database
-   - Run migrations (`npm run migrate:prod`)
-   - Verify schema changes
-
-3. **Blue-Green Deployment**
-   - Deploy to green environment
-   - Run smoke tests
-   - Switch traffic gradually (10% → 50% → 100%)
-   - Monitor error rates and latency
-   - Rollback if error rate > 1%
 
 4. **Post-Deployment Verification**
    - Check health endpoints (`/health`, `/metrics`)
