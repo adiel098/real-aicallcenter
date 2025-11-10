@@ -19,7 +19,12 @@ export const userDataDatabase: UserData[] = [
     name: 'John Smith',
     medicareData: {
       age: 68,
+      dateOfBirth: '1956-03-15',
+      address: '123 Main Street',
       city: 'Washington',
+      state: 'DC',
+      zipCode: '20001',
+      email: 'john.smith@email.com',
       medicareNumber: '1AB2-CD3-EF45',
       planLevel: 'Advantage',
       hasColorblindness: true,
@@ -44,7 +49,12 @@ export const userDataDatabase: UserData[] = [
     name: 'Sarah Johnson',
     medicareData: {
       age: 72,
+      dateOfBirth: '1952-07-22',
+      address: '456 Oak Avenue',
       city: 'Baltimore',
+      state: 'MD',
+      zipCode: '21201',
+      email: 'sarah.johnson@email.com',
       medicareNumber: '2BC3-DE4-FG56',
       planLevel: 'B',
       hasColorblindness: true,
@@ -69,14 +79,19 @@ export const userDataDatabase: UserData[] = [
     name: 'Michael Chen',
     medicareData: {
       age: 66,
+      dateOfBirth: '1958-11-10',
       city: 'Arlington',
-      // Missing: medicareNumber, planLevel, hasColorblindness, colorblindType
+      // Missing: address, state, zipCode, email, medicareNumber, planLevel, hasColorblindness, colorblindType
       currentEyewear: 'Reading glasses',
     },
     eligibilityData: {
       planEligibilityStatus: 'PENDING',
     },
     missingFields: [
+      'medicareData.address',
+      'medicareData.state',
+      'medicareData.zipCode',
+      'medicareData.email',
       'medicareData.medicareNumber',
       'medicareData.planLevel',
       'medicareData.hasColorblindness',
@@ -85,13 +100,14 @@ export const userDataDatabase: UserData[] = [
     lastUpdated: '2024-01-17T09:15:00Z',
   },
   {
-    userId: 'lead-004', // Emily Davis - INCOMPLETE (missing MBI)
+    userId: 'lead-004', // Emily Davis - INCOMPLETE (missing MBI and contact info)
     phoneNumber: '+972501234004',
     name: 'Emily Davis',
     medicareData: {
       age: 70,
+      dateOfBirth: '1954-05-18',
       city: 'Alexandria',
-      // Missing: medicareNumber
+      // Missing: address, state, zipCode, email, medicareNumber
       planLevel: 'Advantage',
       hasColorblindness: true,
       colorblindType: 'red-green (protanopia)',
@@ -103,7 +119,13 @@ export const userDataDatabase: UserData[] = [
       planEligibilityStatus: 'PENDING',
       mbiValidated: false,
     },
-    missingFields: ['medicareData.medicareNumber'],
+    missingFields: [
+      'medicareData.address',
+      'medicareData.state',
+      'medicareData.zipCode',
+      'medicareData.email',
+      'medicareData.medicareNumber',
+    ],
     lastUpdated: '2024-01-18T16:45:00Z',
   },
   {
@@ -112,7 +134,12 @@ export const userDataDatabase: UserData[] = [
     name: 'David Wilson',
     medicareData: {
       age: 69,
+      dateOfBirth: '1955-09-08',
+      address: '789 Elm Street',
       city: 'Silver Spring',
+      state: 'MD',
+      zipCode: '20901',
+      email: 'david.wilson@email.com',
       medicareNumber: '3CD4-EF5-GH67',
       planLevel: 'D',
       hasColorblindness: false,
@@ -136,13 +163,18 @@ export const userDataDatabase: UserData[] = [
     name: 'Lisa Anderson',
     medicareData: {
       age: 67,
+      dateOfBirth: '1957-02-14',
       city: 'Bethesda',
-      // Most fields missing
+      // Most fields missing: address, state, zipCode, email, medicareNumber, planLevel, hasColorblindness, currentEyewear
     },
     eligibilityData: {
       planEligibilityStatus: 'PENDING',
     },
     missingFields: [
+      'medicareData.address',
+      'medicareData.state',
+      'medicareData.zipCode',
+      'medicareData.email',
       'medicareData.medicareNumber',
       'medicareData.planLevel',
       'medicareData.hasColorblindness',
@@ -157,7 +189,12 @@ export const userDataDatabase: UserData[] = [
     name: 'James Martinez',
     medicareData: {
       age: 71,
+      dateOfBirth: '1953-12-05',
+      address: '321 Pine Avenue',
       city: 'Rockville',
+      state: 'MD',
+      zipCode: '20850',
+      email: 'james.martinez@email.com',
       medicareNumber: '4DE5-FG6-HI78',
       planLevel: 'Advantage',
       hasColorblindness: true,
@@ -182,7 +219,12 @@ export const userDataDatabase: UserData[] = [
     name: 'Jennifer Taylor',
     medicareData: {
       age: 74,
+      dateOfBirth: '1950-08-29',
+      address: '555 Maple Drive',
       city: 'Frederick',
+      state: 'MD',
+      zipCode: '21701',
+      email: 'jennifer.taylor@email.com',
       medicareNumber: '5EF6-GH7-IJ89',
       planLevel: 'C',
       hasColorblindness: true,
@@ -302,11 +344,28 @@ export const updateUserData = (
 export const calculateMissingFields = (user: UserData): string[] => {
   const missing: string[] = [];
 
-  // Check Medicare data required fields
-  if (!user.medicareData.age) missing.push('medicareData.age');
+  // Check Medicare data required fields (per Task.txt requirements)
+
+  // CRITICAL: dateOfBirth is required for Medicare verification (Task.txt line 75)
+  if (!user.medicareData.dateOfBirth) missing.push('medicareData.dateOfBirth');
+
+  // Age can be calculated from DOB, but if provided independently, that's fine
+  if (!user.medicareData.age && !user.medicareData.dateOfBirth) missing.push('medicareData.age');
+
+  // Address fields (Task.txt line 74: "Address / City / State / ZIP")
+  if (!user.medicareData.address) missing.push('medicareData.address');
   if (!user.medicareData.city) missing.push('medicareData.city');
+  if (!user.medicareData.state) missing.push('medicareData.state');
+  if (!user.medicareData.zipCode) missing.push('medicareData.zipCode');
+
+  // Contact details (Task.txt line 76)
+  if (!user.medicareData.email) missing.push('medicareData.email');
+
+  // Medicare validation fields (Task.txt lines 79-86)
   if (!user.medicareData.medicareNumber) missing.push('medicareData.medicareNumber');
   if (!user.medicareData.planLevel) missing.push('medicareData.planLevel');
+
+  // Colorblindness is REQUIRED for premium eyewear subscription (Task.txt business case)
   if (user.medicareData.hasColorblindness === undefined) {
     missing.push('medicareData.hasColorblindness');
   }
@@ -314,6 +373,7 @@ export const calculateMissingFields = (user: UserData): string[] => {
   if (user.medicareData.hasColorblindness && !user.medicareData.colorblindType) {
     missing.push('medicareData.colorblindType');
   }
+
   if (!user.medicareData.currentEyewear) missing.push('medicareData.currentEyewear');
 
   return missing;

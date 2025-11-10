@@ -53,7 +53,22 @@
       "Bash(cmd /c \"for /f \"tokens=5\" %a in (''netstat -ano ^| findstr /r \":300[0-4]\"'') do taskkill /F /PID %a\")",
       "Bash(npx tsc:*)",
       "Bash(cmd /c \"timeout /t 2 /nobreak\")",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(cmd /c \"del monitoring.db monitoring.db-shm monitoring.db-wal\")",
+      "Bash(cmd /c \"del nul\")",
+      "Bash(test:*)",
+      "Bash(npm run setup:tools:*)",
+      "Bash(grep:*)",
+      "Bash(node:*)",
+      "Bash(npm run dev:user-data:*)",
+      "Bash(npm run dev:userdata-crm:*)",
+      "Bash(cmd /c \"for /f \"tokens=5\" %a in (''''netstat -ano ^| findstr /r \":300[0-4]\"'''') do taskkill /F /PID %a\")",
+      "Bash(cmd /c \"timeout /t 10 /nobreak\")",
+      "Bash(cmd /c \"timeout /t 15 /nobreak\")",
+      "Bash(nul)",
+      "Bash(cmd /c \"del monitoring.db monitoring.db-shm monitoring.db-wal 2>nul\")",
+      "Bash(cmd /c \"del monitoring.db-shm monitoring.db-wal 2>nul\")",
+      "Bash(npx tsx:*)"
     ],
     "deny": [],
     "ask": []

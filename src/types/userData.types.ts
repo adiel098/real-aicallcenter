@@ -11,8 +11,26 @@ export interface MedicareData {
   /** User's age in years */
   age?: number;
 
+  /** Date of birth in YYYY-MM-DD format (REQUIRED for Medicare verification per Task.txt) */
+  dateOfBirth?: string;
+
   /** City of residence (for initial screening verification) */
   city?: string;
+
+  /** Street address (REQUIRED per Task.txt) */
+  address?: string;
+
+  /** State code (e.g., "MD", "VA") (REQUIRED per Task.txt) */
+  state?: string;
+
+  /** ZIP code (5 or 9 digit) (REQUIRED per Task.txt) */
+  zipCode?: string;
+
+  /** Email address for contact (REQUIRED per Task.txt) */
+  email?: string;
+
+  /** Last 4 digits of SSN for verification (optional) */
+  ssnLast4?: string;
 
   /** Medicare Beneficiary Identifier (MBI) - format: 1AB2-CD3-EF45 */
   medicareNumber?: string;

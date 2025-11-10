@@ -11,8 +11,8 @@
     "dev:vapi-handler": "ts-node-dev --respawn --transpile-only src/vapi/toolHandler.server.ts",
     "dev:servers": "concurrently \"npm run dev:lead-crm\" \"npm run dev:userdata-crm\" \"npm run dev:classification-crm\" \"npm run dev:vici\" \"npm run dev:vapi-handler\"",
     "dev:all": "npm run setup:webhooks && npm run dev:servers",
-    "setup:webhooks": "ts-node scripts/setup-vapi-webhooks.ts",
-    "setup:tools": "ts-node scripts/setup-vapi-tools.ts",
+    "setup:webhooks": "tsx scripts/setup-vapi-webhooks.ts",
+    "setup:tools": "tsx scripts/setup-vapi-tools.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -45,6 +45,7 @@
     "@types/node": "^20.11.17",
     "concurrently": "^8.2.2",
     "ts-node-dev": "^2.0.0",
+    "tsx": "^4.20.6",
     "typescript": "^5.3.3"
   }
 }

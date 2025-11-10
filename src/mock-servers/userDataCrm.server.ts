@@ -63,12 +63,38 @@ function migrateUserDataToDatabase() {
  * Calculates missing fields dynamically based on current data
  */
 function convertUserDataRecordToUserData(record: UserDataRecord): UserData {
+  // Parse medicare_data with error handling for corrupt JSON
+  let medicareData = {};
+  if (record.medicare_data) {
+    try {
+      medicareData = JSON.parse(record.medicare_data);
+    } catch (error) {
+      logger.warn(
+        { userId: record.user_id, medicare_data: record.medicare_data },
+        'Failed to parse medicare_data, using empty object'
+      );
+    }
+  }
+
+  // Parse eligibility_data with error handling for corrupt JSON
+  let eligibilityData;
+  if (record.eligibility_data) {
+    try {
+      eligibilityData = JSON.parse(record.eligibility_data);
+    } catch (error) {
+      logger.warn(
+        { userId: record.user_id, eligibility_data: record.eligibility_data },
+        'Failed to parse eligibility_data, using undefined'
+      );
+    }
+  }
+
   const userData: UserData = {
     userId: record.user_id,
     phoneNumber: record.phone_number,
     name: record.name || '',
-    medicareData: record.medicare_data ? JSON.parse(record.medicare_data) : {},
-    eligibilityData: record.eligibility_data ? JSON.parse(record.eligibility_data) : undefined,
+    medicareData,
+    eligibilityData,
     missingFields: [], // Will be calculated below
     lastUpdated: record.last_updated || new Date().toISOString(),
   };
@@ -258,9 +284,34 @@ app.put('/api/users/:phoneNumber', (req: Request, res: Response) => {
 
   // Update user data in database
   try {
+    // CRITICAL: Fetch existing data from database to merge with updates
+    // This prevents data loss when updating partial fields
+    const existingRecord = databaseService.getUserDataById(existingUser.userId);
+    if (!existingRecord) {
+      throw new Error('User record not found in database');
+    }
+
+    // Parse existing JSON data
+    const existingMedicareData = existingRecord.medicare_data
+      ? JSON.parse(existingRecord.medicare_data)
+      : {};
+    const existingEligibilityData = existingRecord.eligibility_data
+      ? JSON.parse(existingRecord.eligibility_data)
+      : {};
+
+    // MERGE new data with existing data (spread operator)
+    // This ensures we don't lose any existing fields when updating
+    const mergedMedicareData = updateRequest.medicareData
+      ? { ...existingMedicareData, ...updateRequest.medicareData }
+      : existingMedicareData;
+
+    const mergedEligibilityData = updateRequest.eligibilityData
+      ? { ...existingEligibilityData, ...updateRequest.eligibilityData }
+      : existingEligibilityData;
+
     const updates: Partial<UserDataRecord> = {
-      medicare_data: updateRequest.medicareData ? JSON.stringify(updateRequest.medicareData) : undefined,
-      eligibility_data: updateRequest.eligibilityData ? JSON.stringify(updateRequest.eligibilityData) : undefined,
+      medicare_data: JSON.stringify(mergedMedicareData),
+      eligibility_data: JSON.stringify(mergedEligibilityData),
       last_updated: new Date().toISOString(),
     };
 
@@ -423,7 +474,7 @@ app.post('/api/users', (req: Request, res: Response) => {
       phone_number: normalizedPhone,
       name,
       medicare_data: medicareData ? JSON.stringify(medicareData) : undefined,
-      missing_fields: JSON.stringify(missingFields),
+      // missing_fields is calculated dynamically, not stored in database
       last_updated: new Date().toISOString(),
     };
 
