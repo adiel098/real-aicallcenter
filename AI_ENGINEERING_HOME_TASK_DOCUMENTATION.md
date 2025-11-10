@@ -427,7 +427,9 @@ Backend sends comprehensive packet: caller identity, Medicare data (plan, MBI, D
 
 **Production Scaling Strategy:**
 
-Replace SQLite with PostgreSQL + pgBouncer for connection pooling. Use Redis for distributed session storage (survives server restarts). Deploy on AWS/GCP with auto-scaling (2-20 instances based on load). Load balancer distributes traffic across instances. Replace ngrok with production HTTPS endpoint.
+**Telephony Layer (Twilio SIP/WebRTC):** Twilio Elastic SIP Trunking supports 100+ concurrent calls per trunk. Configure multiple SIP trunks or use Twilio WebRTC Client for browser-based calls. VAPI manages connection pooling to Twilio—each concurrent call maintains one SIP/WebRTC session. Twilio auto-scales media servers globally for voice quality.
+
+**Backend Layer:** Replace SQLite with PostgreSQL + pgBouncer for connection pooling. Use Redis for distributed session storage (survives server restarts). Deploy on AWS/GCP with auto-scaling (2-20 instances based on load). Load balancer distributes traffic across instances. Replace ngrok with production HTTPS endpoint.
 
 **Scaling Configuration:**
 
@@ -435,7 +437,11 @@ Kubernetes auto-scaling: Scale up when CPU > 70% or request queue > 100. Scale d
 
 **Horizontal Scaling Considerations:**
 
-Stateless backend design: All session data in Redis, not in-memory. Sticky sessions not needed. Database connection pooling prevents connection exhaustion. VICI/VAPI webhook endpoints must handle requests from any instance.
+**Twilio SIP Capacity:** Each SIP trunk handles 100+ concurrent channels. For 500 concurrent calls, provision 5 trunks. Twilio bills per-minute, so cost scales linearly with usage.
+
+**WebRTC Alternative:** Twilio Programmable Voice WebRTC allows browser/mobile clients to connect directly without phone lines. Supports 10,000+ concurrent connections per account. Lower latency than SIP for internet-based calls.
+
+**Backend Scaling:** Stateless design—all session data in Redis, not in-memory. Sticky sessions not needed. Database connection pooling prevents exhaustion. VICI/VAPI webhook endpoints handle requests from any instance.
 
 
 
