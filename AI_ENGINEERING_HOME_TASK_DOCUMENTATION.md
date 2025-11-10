@@ -503,7 +503,6 @@ Backend sends comprehensive packet: caller identity, Medicare data (plan, MBI, D
 | Component | Current Limit | Bottleneck |
 |-----------|---------------|------------|
 | SQLite Database | ~10-20 concurrent writes | Write lock contention |
-| In-Memory Sessions | ~50 sessions | Server restart = data loss |
 | Single Server Instance | ~30 requests/sec | No horizontal scaling |
 | Ngrok Tunnel | Development only | Not production-ready |
 
@@ -569,17 +568,74 @@ Inbound Call → VAPI Webhook (POST /) → check_lead tool → Lead CRM (GET /le
 
 ### 6.2 Local Testing Approach
 
-**Mock APIs & Simulated Calls:**
+**1. Mock API Servers**
 
-All 5 servers (Lead, UserData, Classification, VICI, Tool Handler) run locally on ports 3000-3004. Mock Medicare API returns hardcoded responses. Use Postman to simulate VAPI webhooks (POST to localhost:3000 with call status/tool requests).
+All 5 backend services run locally with mock data:
 
-**Mock VAPI Call Simulator:**
+| Server | Port | Mock Implementation |
+|--------|------|---------------------|
+| Tool Handler | 3000 | Receives VAPI webhooks, orchestrates tools |
+| Lead CRM | 3001 | Returns hardcoded lead data for test phone numbers |
+| UserData CRM | 3002 | Returns hardcoded Medicare member data |
+| Classification CRM | 3003 | Binary matching logic, sends mock VICI dispositions |
+| VICI Mock | 3004 | Logs all dispositions, callbacks (in-memory store) |
 
-Script simulates full call lifecycle: Send status-update webhook (in-progress) → Send tool-calls webhooks (check_lead, get_user_data, validate_medicare, classify_and_save_user) → Send status-update (ended). Validates responses and logs results.
+**Start All Servers**: `npm run dev:all` (runs all 5 concurrently)
 
-**Running Local Tests:**
+**2. Mock Medicare API**
 
-Run `npm run dev:all` to start all 5 servers. Use test script: `npm run test:simulate-call` with test phone numbers (+972501234001 for John Smith QUALIFIED, +12025551005 for David Wilson NOT_QUALIFIED). Verify dispositions logged in VICI mock.
+Instead of calling real CMS Medicare API, we use hardcoded responses in the backend:
+
+```javascript
+// Mock verify-member endpoint
+if (ssn === "123-45-6789" && dob === "1958-03-15") {
+  return { mbi: "1EG4-TE5-MK73", firstName: "John", lastName: "Smith" }
+}
+
+// Mock check-coverage endpoint
+if (mbi === "1EG4-TE5-MK73") {
+  return { visionCoverage: true, planLevel: "C" }
+}
+```
+
+**3. Simulated VAPI Webhooks (Postman/cURL)**
+
+Simulate VAPI webhooks locally using Postman or cURL:
+
+**Call Start**:
+```bash
+curl -X POST http://localhost:3000/ -H "Content-Type: application/json" \
+-d '{"message":{"type":"status-update","status":"in-progress","call":{"id":"call_test123","phoneNumber":"+972501234001"}}}'
+```
+
+**Tool Call**:
+```bash
+curl -X POST http://localhost:3000/ -H "Content-Type: application/json" \
+-d '{"message":{"type":"tool-calls","toolCalls":[{"id":"tool_abc","function":{"name":"check_lead","arguments":"{\"phoneNumber\":\"+972501234001\"}"}}]}}'
+```
+
+**4. Mock VAPI Call Simulator Script**
+
+Automated test script simulates complete call flow (sends webhooks, validates responses, checks VICI dispositions).
+
+**Run**: `npm run test:simulate-call -- +972501234001`
+
+**5. Simulated Twilio Calls**
+
+**Option A**: Twilio sandbox account (free) with test phone number pointing to VAPI.
+
+**Option B**: Twilio Mock Client SDK for unit tests without real calls.
+
+**6. Test Scenarios**
+
+| Test Phone | Expected Flow | Expected Disposition |
+|------------|---------------|----------------------|
+| +972501234001 | John Smith, QUALIFIED (all criteria met) | SALE |
+| +12025551005 | David Wilson, NOT_QUALIFIED (no colorblindness) | NQI |
+| +15555550100 | Lead not found | DC (early disconnect) |
+| After-hours call | Business hours check fails | NA (callback) |
+
+**Verification**: Check VICI dispositions with `curl http://localhost:3004/dispositions`
 
 ### 6.3 Production Deployment Checklist
 
