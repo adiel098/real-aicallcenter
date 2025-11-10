@@ -1,12 +1,8 @@
 # AI Engineering Home Task — Alex AI / VICI Integration
 ## Technical Documentation
 
-**Author**: AI Engineering Candidate
-**Date**: 2025-11-10
-**Version**: 1.0
 
-**Project**: Medicare Eligibility Verification System for Premium Eyewear Program
-**Inbound Phone Number**: +1 (XXX) XXX-XXXX (configured in VAPI)
+**Inbound Phone Number**: +972 033824127 (configured in VAPI)
 
 ---
 
